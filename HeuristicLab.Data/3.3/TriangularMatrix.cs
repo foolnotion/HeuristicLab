@@ -25,68 +25,50 @@ using System.Linq;
 using HeuristicLab.Common;
 using HeuristicLab.Core;
 using HEAL.Attic;
+using System.Collections.ObjectModel;
 
 namespace HeuristicLab.Data {
   [Item("TriangularMatrix", "Represents a lower triangular matrix.")]
   [StorableType("5C09A4FC-887E-4C40-8926-81325C09FA67")]
-  public class TriangularMatrix<T> : ValueTypeMatrix<T>, IStringConvertibleMatrix where T : struct {
+  public class TriangularMatrix<T> : ValueTypeArray<T>, IStringConvertibleArray where T : struct {
     [Storable]
-    private readonly T[] storage;
-
     private readonly int dimension;
-    private readonly long capacity;
+    public int Dimension { get { return dimension; } }
+
+    public ReadOnlyCollection<T> Data {
+      get { return Array.AsReadOnly(array); }
+    }
 
     private TriangularMatrix() { }
 
-    public TriangularMatrix(int dimension) {
+    public TriangularMatrix(int dimension) : base(dimension * (dimension + 1) / 2) {
       this.dimension = dimension;
-      capacity = (long)dimension * (dimension + 1) / 2;
-      storage = new T[capacity];
-
-      readOnly = true;
+      resizable = false;
     }
 
     [StorableConstructor]
     protected TriangularMatrix(StorableConstructorFlag _) : base(_) { }
 
     protected TriangularMatrix(TriangularMatrix<T> original, Cloner cloner) : base(original, cloner) {
-      capacity = original.capacity;
       dimension = original.dimension;
-      storage = (T[])original.storage.Clone();
+      array = (T[])original.array.Clone();
     }
 
     public override IDeepCloneable Clone(Cloner cloner) {
       return new TriangularMatrix<T>(this, cloner);
     }
 
-    public override int Rows {
-      get { return dimension; }
-      protected set { throw new NotSupportedException(); }
-    }
-
-    public override int Columns {
-      get { return dimension; }
-      protected set { throw new NotSupportedException(); }
-    }
-
-    public int Length { get { return storage.Length; } }
-
     // the indexing rule for the (lower-)triangular matrix is that always i <= j, otherwise an IndexOutOfBounds exception will occur 
-    public override T this[int rowIndex, int columnIndex] {
+    public T this[int rowIndex, int columnIndex] {
       get {
         // provide symmetry of returned values 
         if (columnIndex > rowIndex) return this[columnIndex, rowIndex];
-        return storage[rowIndex * (rowIndex + 1) / 2 + columnIndex];
+        return array[rowIndex * (rowIndex + 1) / 2 + columnIndex];
       }
       set {
         if (columnIndex > rowIndex) this[columnIndex, rowIndex] = value;
-        else storage[rowIndex * (rowIndex + 1) / 2 + columnIndex] = value;
+        else array[rowIndex * (rowIndex + 1) / 2 + columnIndex] = value;
       }
-    }
-
-    public T this[int index] {
-      get { return storage[index]; }
-      set { storage[index] = value; }
     }
 
     protected virtual string GetValue(int rowIndex, int columnIndex) {
@@ -112,7 +94,7 @@ namespace HeuristicLab.Data {
     }
 
     public override IEnumerator<T> GetEnumerator() {
-      return storage.Cast<T>().GetEnumerator();
+      return array.Cast<T>().GetEnumerator();
     }
 
     private static bool TryParse(string value, out T val) {
@@ -185,27 +167,21 @@ namespace HeuristicLab.Data {
       return (Math.Sqrt(8 * x + 1) - 1) / 2;
     }
 
-    #region IStringConvertibleMatrix Members
-    int IStringConvertibleMatrix.Rows {
-      get { return dimension; }
-      set { throw new NotSupportedException("The triangular matrix does not support changing the number of rows."); }
-    }
-
-    int IStringConvertibleMatrix.Columns {
-      get { return dimension; }
-      set { throw new NotSupportedException("The triangular matrix does not support changing the number of columns."); }
-    }
-
-    string IStringConvertibleMatrix.GetValue(int rowIndex, int columnIndex) {
-      return GetValue(rowIndex, columnIndex);
-    }
-
-    bool IStringConvertibleMatrix.SetValue(string value, int rowIndex, int columnIndex) {
-      return SetValue(value, rowIndex, columnIndex);
-    }
-
-    bool IStringConvertibleMatrix.Validate(string value, out string errorMessage) {
+    #region IStringConvertibleArray members
+    bool IStringConvertibleArray.Validate(string value, out string errorMessage) {
       return Validate(value, out errorMessage);
+    }
+
+    public string GetValue(int index) {
+      return array[index].ToString();
+    }
+
+    public bool SetValue(string value, int index) {
+      if (TryParse(value, out T val)) {
+        this[index] = val;
+        return true;
+      }
+      throw new ArgumentException("Coult not parse value " + value + " as " + typeof(T));
     }
     #endregion
   }
