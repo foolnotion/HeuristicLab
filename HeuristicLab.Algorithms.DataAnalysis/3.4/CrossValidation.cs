@@ -514,10 +514,12 @@ namespace HeuristicLab.Algorithms.DataAnalysis {
           var random = new FastRandom(seed);
           dataset = dataset.Shuffle(random);
         }
-        var problemDataClone = new ClassificationProblemData(dataset, Problem.ProblemData.AllowedInputVariables, targetVariable);
+        var problemData = (IClassificationProblemData)Problem.ProblemData;
+        var problemDataClone = new ClassificationProblemData(dataset, problemData.AllowedInputVariables, targetVariable);
         // set partitions of problem data clone correctly
         problemDataClone.TrainingPartition.Start = SamplesStart.Value; problemDataClone.TrainingPartition.End = SamplesEnd.Value;
         problemDataClone.TestPartition.Start = SamplesStart.Value; problemDataClone.TestPartition.End = SamplesEnd.Value;
+        problemDataClone.PositiveClass = problemData.PositiveClass;
         // clone models
         var ensembleSolution = new ClassificationEnsembleSolution(problemDataClone);
         ensembleSolution.AddClassificationSolutions(solutions.Value);
