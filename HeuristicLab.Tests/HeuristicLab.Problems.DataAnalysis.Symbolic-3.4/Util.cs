@@ -97,7 +97,7 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.Tests {
       }
       Console.WriteLine("Random tree evaluation performance of " + interpreter.GetType() + ": " +
         watch.ElapsedMilliseconds + "ms " +
-        Util.NodesPerSecond(nNodes * repetitions, watch) + " nodes/sec");
+        Util.NodesPerSecond(nNodes * repetitions, watch).ToString("N") + " nodes/sec");
       return Util.NodesPerSecond(nNodes * repetitions, watch);
     }
   }

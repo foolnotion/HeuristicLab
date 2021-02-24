@@ -123,6 +123,145 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.Tests {
     [TestMethod]
     [TestCategory("Problems.DataAnalysis.Symbolic")]
     [TestProperty("Time", "long")]
+    public void NativeInterpreterTestTypeCoherentGrammarPerformance() {
+      TestTypeCoherentGrammarPerformance(new NativeInterpreter(), 12.5e6);
+    }
+    [TestMethod]
+    [TestCategory("Problems.DataAnalysis.Symbolic")]
+    [TestProperty("Time", "long")]
+    public void NativeInterpreterTestFullGrammarPerformance() {
+      TestFullGrammarPerformance(new NativeInterpreter(), 12.5e6);
+    }
+    [TestMethod]
+    [TestCategory("Problems.DataAnalysis.Symbolic")]
+    [TestProperty("Time", "long")]
+    public void NativeInterpreterTestArithmeticGrammarPerformance() {
+      TestArithmeticGrammarPerformance(new NativeInterpreter(), 12.5e6);
+    }
+
+    [TestMethod]
+    [TestCategory("Problems.DataAnalysis.Symbolic")]
+    [TestProperty("Time", "long")]
+    public void NativeInterpreterTestCeres() {
+      var parser = new InfixExpressionParser();
+      var random = new FastRandom(1234);
+      const int nRows = 20;
+
+      var x1 = Enumerable.Range(0, nRows).Select(_ => UniformDistributedRandom.NextDouble(random, -1, 1)).ToArray();
+      var x2 = Enumerable.Range(0, nRows).Select(_ => UniformDistributedRandom.NextDouble(random, -1, 1)).ToArray();
+      var x3 = Enumerable.Range(0, nRows).Select(_ => UniformDistributedRandom.NextDouble(random, -1, 1)).ToArray();
+
+      var optimalAlpha = new double[] { -2, -3, -5 };
+      var y = Enumerable.Range(0, nRows).Select(i => 
+          Math.Exp(x1[i] * optimalAlpha[0]) + 
+          Math.Exp(x2[i] * optimalAlpha[1]) + 
+          Math.Exp(x3[i] * optimalAlpha[2])).ToArray();
+
+      var initialAlpha = Enumerable.Range(0, 3).Select(_ => UniformDistributedRandom.NextDouble(random, -1, 1)).ToArray();
+      var ds = new Dataset(new[] { "x1", "x2", "x3", "y" }, new[] { x1, x2, x3, y });
+
+      var expr = "EXP(x1) + EXP(x2) + EXP(x3)";
+      var tree = parser.Parse(expr);
+      var rows = Enumerable.Range(0, nRows).ToArray();
+      var options = new SolverOptions { 
+        Minimizer = (int)MinimizerType.TRUST_REGION,
+        Iterations = 20,
+        TrustRegionStrategy = (int)TrustRegionStrategyType.LEVENBERG_MARQUARDT,
+        LinearSolver = (int)LinearSolverType.DENSE_QR
+      };
+
+      var nodesToOptimize = new HashSet<ISymbolicExpressionTreeNode>(tree.IterateNodesPrefix().Where(x => x is VariableTreeNode));
+      int idx = 0;
+      foreach(var node in nodesToOptimize) {
+        (node as VariableTreeNode).Weight = initialAlpha[idx++];
+        Console.WriteLine((node as VariableTreeNode).Weight);
+
+      }
+
+      var summary = new OptimizationSummary();
+      var parameters = ParameterOptimizer.OptimizeTree(tree, ds, rows, "y", nodesToOptimize, options, ref summary);
+
+      Console.Write("Optimized parameters: ");
+      foreach (var t in parameters) {
+        Console.Write(t.Value + " ");
+      }
+      Console.WriteLine();
+
+      Console.WriteLine("Optimization summary:");
+      Console.WriteLine("Initial cost:         " + summary.InitialCost);
+      Console.WriteLine("Final cost:           " + summary.FinalCost);
+      Console.WriteLine("Successful steps:     " + summary.SuccessfulSteps);
+      Console.WriteLine("Unsuccessful steps:   " + summary.UnsuccessfulSteps);
+      Console.WriteLine("Residual evaluations: " + summary.ResidualEvaluations);
+      Console.WriteLine("Jacobian evaluations: " + summary.JacobianEvaluations);
+    }
+
+    [TestMethod]
+    [TestCategory("Problems.DataAnalysis.Symbolic")]
+    [TestProperty("Time", "long")]
+    public void NativeInterpreterTestCeresVariableProjection() {
+      var parser = new InfixExpressionParser();
+      var random = new FastRandom(1234);
+      const int nRows = 20;
+
+      var x1 = Enumerable.Range(0, nRows).Select(_ => UniformDistributedRandom.NextDouble(random, -1, 1)).ToArray();
+      var x2 = Enumerable.Range(0, nRows).Select(_ => UniformDistributedRandom.NextDouble(random, -1, 1)).ToArray();
+      var x3 = Enumerable.Range(0, nRows).Select(_ => UniformDistributedRandom.NextDouble(random, -1, 1)).ToArray();
+
+      var optimalAlpha = new double[] { -2, -3, -5 };
+      var y = Enumerable.Range(0, nRows).Select(i =>
+        Math.Exp(x1[i] * optimalAlpha[0]) +
+        Math.Exp(x2[i] * optimalAlpha[1]) +
+        Math.Exp(x3[i] * optimalAlpha[2])).ToArray();
+
+      var initialAlpha = Enumerable.Range(0, 3).Select(_ => UniformDistributedRandom.NextDouble(random, -1, 1)).ToArray();
+      var ds = new Dataset(new[] { "x1", "x2", "x3", "y" }, new[] { x1, x2, x3, y });
+
+      var expr = new[] { "EXP(x1)", "EXP(x2)", "EXP(x3)" };
+      var trees = expr.Select(x => parser.Parse(x)).ToArray();
+      var rows = Enumerable.Range(0, nRows).ToArray();
+      var options = new SolverOptions {
+        Minimizer = (int)MinimizerType.TRUST_REGION,
+        Iterations = 100,
+        TrustRegionStrategy = (int)TrustRegionStrategyType.LEVENBERG_MARQUARDT,
+        LinearSolver = (int)LinearSolverType.DENSE_QR
+      };
+
+      var summary = new OptimizationSummary();
+
+      var nodesToOptimize = new HashSet<ISymbolicExpressionTreeNode>(trees.SelectMany(t => t.IterateNodesPrefix().Where(x => x is VariableTreeNode)));
+      int idx = 0;
+      Console.Write("Initial parameters: ");
+      foreach (var node in nodesToOptimize) {
+        (node as VariableTreeNode).Weight = initialAlpha[idx++];
+        Console.Write((node as VariableTreeNode).Weight + " ");
+      }
+      Console.WriteLine();
+
+      var coeff = new double[trees.Length + 1];
+      var parameters = ParameterOptimizer.OptimizeTree(trees, ds, rows, "y", nodesToOptimize, options, coeff, ref summary);
+      Console.Write("Optimized parameters: ");
+      foreach (var t in parameters) {
+        Console.Write(t.Value + " ");
+      }
+      Console.WriteLine();
+
+      Console.Write("Coefficients: ");
+      foreach (var v in coeff) Console.Write(v + " ");
+      Console.WriteLine();
+
+      Console.WriteLine("Optimization summary:");
+      Console.WriteLine("Initial cost:         " + summary.InitialCost);
+      Console.WriteLine("Final cost:           " + summary.FinalCost);
+      Console.WriteLine("Successful steps:     " + summary.SuccessfulSteps);
+      Console.WriteLine("Unsuccessful steps:   " + summary.UnsuccessfulSteps);
+      Console.WriteLine("Residual evaluations: " + summary.ResidualEvaluations);
+      Console.WriteLine("Jacobian evaluations: " + summary.JacobianEvaluations);
+    }
+
+    [TestMethod]
+    [TestCategory("Problems.DataAnalysis.Symbolic")]
+    [TestProperty("Time", "long")]
     public void BatchInterpreterTestTypeCoherentGrammarPerformance() {
       TestTypeCoherentGrammarPerformance(new SymbolicDataAnalysisExpressionTreeBatchInterpreter(), 12.5e6);
     }
