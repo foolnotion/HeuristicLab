@@ -127,6 +127,15 @@
     <Compile Include="BaselineClassifiers\OneRClassificationModel.cs" />
     <Compile Include="BaselineClassifiers\OneRClassificationSolution.cs" />
     <Compile Include="BaselineClassifiers\ZeroR.cs" />
+    <Compile Include="ContinuedFractionRegression\NelderMeadSimplex.cs" />
+    <Compile Include="ContinuedFractionRegression\NumUtilsTest.cs" />
+    <Compile Include="ContinuedFractionRegression\Problem.cs" />
+    <Compile Include="ContinuedFractionRegression\ObjFunctionNelderMead.cs" />
+    <Compile Include="ContinuedFractionRegression\RegressionResult.cs" />
+    <Compile Include="ContinuedFractionRegression\SimplexConstant.cs" />
+    <Compile Include="ContinuedFractionRegression\Tests.cs" />
+    <Compile Include="ContinuedFractionRegression\Transformation.cs" />
+    <Compile Include="ContinuedFractionRegression\Vector.cs" />
     <Compile Include="CrossValidation.cs">
       <SubType>Code</SubType>
     </Compile>
@@ -376,6 +385,10 @@
       <Name>HeuristicLab.Data-3.3</Name>
       <Private>False</Private>
     </ProjectReference>
+    <ProjectReference Include="..\..\HeuristicLab.Encodings.BinaryVectorEncoding\3.3\HeuristicLab.Encodings.BinaryVectorEncoding-3.3.csproj">
+      <Project>{66d249c3-a01d-42a8-82a2-919bc8ec3d83}</Project>
+      <Name>HeuristicLab.Encodings.BinaryVectorEncoding-3.3</Name>
+    </ProjectReference>
     <ProjectReference Include="..\..\HeuristicLab.Encodings.RealVectorEncoding\3.3\HeuristicLab.Encodings.RealVectorEncoding-3.3.csproj">
       <Project>{BB6D334A-4BB6-4674-9883-31A6EBB32CAB}</Project>
       <Name>HeuristicLab.Encodings.RealVectorEncoding-3.3</Name>
@@ -479,6 +492,7 @@
       <Private>False</Private>
     </Reference>
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
