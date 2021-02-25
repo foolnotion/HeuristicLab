@@ -144,6 +144,14 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       UpdateEncoding();
     }
 
+    [StorableHook(HookType.AfterDeserialization)]
+    private void AfterDeserialization() {
+      DatasetParameter.ValueChanged += DatasetParameter_ValueChanged;
+      TrainingTrainingDatasetParameter.ValueChanged += DatasetParameter_ValueChanged;
+      TrainingTestDatasetParameter.ValueChanged += DatasetParameter_ValueChanged;
+      Phi0_08DatasetParameter.ValueChanged += DatasetParameter_ValueChanged;
+    }
+
     #region event handlers for clearing local variables whenever a dataset is changed
     private void DatasetParameter_ValueChanged(object sender, EventArgs e) {
       ClearLocalVariables();
