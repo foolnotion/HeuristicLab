@@ -133,7 +133,6 @@
     <Compile Include="ContinuedFractionRegression\ObjFunctionNelderMead.cs" />
     <Compile Include="ContinuedFractionRegression\RegressionResult.cs" />
     <Compile Include="ContinuedFractionRegression\SimplexConstant.cs" />
-    <Compile Include="ContinuedFractionRegression\Tests.cs" />
     <Compile Include="ContinuedFractionRegression\Transformation.cs" />
     <Compile Include="ContinuedFractionRegression\Vector.cs" />
     <Compile Include="CrossValidation.cs">

@@ -8,16 +8,18 @@ using HeuristicLab.Core;
 using HeuristicLab.Data;
 using HeuristicLab.Encodings.BinaryVectorEncoding;
 using HeuristicLab.Encodings.RealVectorEncoding;
+using HeuristicLab.Encodings.SymbolicExpressionTreeEncoding;
 using HeuristicLab.Optimization;
 using HeuristicLab.Parameters;
 using HeuristicLab.Problems.DataAnalysis;
+using HeuristicLab.Problems.DataAnalysis.Symbolic;
 using HeuristicLab.Problems.Instances;
 
 namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
   [Item("Continued Fraction Regression (CFR)", "Attempts to find a continued fraction minimizing the regularized MSE / R^2 to given data.")]
   [StorableType("CAC0F743-8524-436C-B81E-7C628A302DF8")]
   [Creatable(CreatableAttribute.Categories.DataAnalysisRegression, Priority = 999)]
-  public class Problem : HeuristicLab.Optimization.SingleObjectiveBasicProblem<MultiEncoding> 
+  public class Problem : HeuristicLab.Optimization.SingleObjectiveBasicProblem<MultiEncoding>
     /*, IProblemInstanceConsumer<IRegressionProblemData>, IProblemInstanceExporter<IRegressionProblemData>*/  // only if we can change the code to work with a single dataset
     {
     private const double epsilon = 1e-6;
@@ -120,7 +122,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
     public Problem() : base() {
       Parameters.Add(new FixedValueParameter<DoubleValue>("L1L2_mixing", "TODO Description", new DoubleValue(0.2)));
       Parameters.Add(new FixedValueParameter<DoubleValue>("L1L2_weight", "TODO Description", new DoubleValue(1)));
-      Parameters.Add(new FixedValueParameter<DoubleValue>("penality", "TODO Description", new DoubleValue(0.01)));
+      Parameters.Add(new FixedValueParameter<DoubleValue>("penalty", "TODO Description", new DoubleValue(0.01)));
       Parameters.Add(new FixedValueParameter<IntValue>("fraction_depth", "TODO Description", new IntValue(4)));
       Parameters.Add(new ValueParameter<Dataset>("dataset", "TODO Description", new Dataset()));
       Parameters.Add(new ValueParameter<Dataset>("datasetTrainingTraining", "TODO Description", new Dataset()));
@@ -150,6 +152,11 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       TrainingTrainingDatasetParameter.ValueChanged += DatasetParameter_ValueChanged;
       TrainingTestDatasetParameter.ValueChanged += DatasetParameter_ValueChanged;
       Phi0_08DatasetParameter.ValueChanged += DatasetParameter_ValueChanged;
+
+      if (Parameters.ContainsKey("penality")) {
+        Parameters.Remove("penality");
+        Parameters.Add(new FixedValueParameter<DoubleValue>("penalty", "TODO Description", new DoubleValue(0.01)));
+      }
     }
 
     #region event handlers for clearing local variables whenever a dataset is changed
@@ -175,7 +182,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
     }
 
     public override double Evaluate(Individual individual, IRandom random) {
-      if(dataMatrix == null) {
+      if (dataMatrix == null) {
         InitializeTransformedDatasets();
       }
 
@@ -276,9 +283,6 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
     }
 
     public override void Analyze(Individual[] individuals, double[] qualities, ResultCollection results, IRandom random) {
-      // Use vars.yourVariable to access variables in the variable store i.e. yourVariable
-      // Write or update results given the range of vectors and resulting qualities
-
       Individual bestIndividual = null;
       double bestQuality = double.MaxValue;
       int theBest = 0;
@@ -289,6 +293,10 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
           bestIndividual = individuals[i].Copy();
           theBest = i;
         }
+      }
+
+      if (dataMatrix == null) {
+        InitializeTransformedDatasets();
       }
 
       /*
@@ -315,9 +323,9 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       InitScatterPlots(results);
 
       #region set dataTables      
-      var datatable = (DataTable)results["datatable"].Value;
-      var coefficients = (DataTable)results["coefficients"].Value;
-      var pearsonR2 = (DataTable)results["personR2"].Value;
+      var datatable = (DataTable)results["Datatable"].Value;
+      var coefficients = (DataTable)results["Coefficients"].Value;
+      var pearsonR2 = (DataTable)results["Pearson R2"].Value;
 
       datatable.Rows["MSE"].Values.Add(calculateRegMSE(((DoubleValue)bestIndividual["LS"]).Value, binar, 0.0));
       datatable.Rows["RegMSE"].Values.Add(calculateRegMSE(((DoubleValue)bestIndividual["LS"]).Value, binar, Penalty));
@@ -407,6 +415,51 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       results.AddOrUpdateResult("Curves Phi' = 1", curves1);
       #endregion
       #endregion
+
+      results.AddOrUpdateResult("Model", CreateSymbolicExpressionTree(binar, coeff, TrainingTrainingDataset.VariableNames.ToArray()));
+    }
+
+    private ISymbolicExpressionTree CreateSymbolicExpressionTree(bool[] binar, double[] coeff, string[] varNames) {
+      bool firstCoeffUnequalZero = false;
+      var d = varNames.Length;
+      var expression = constSy.CreateTreeNode(); // zero
+
+      for (var i = coeff.Length - 1; i > 0; i = i - 2 * d) {
+
+        if ((linearFunctionEqualZero(coeff, binar, i - d + 1, i) == false)) {
+          firstCoeffUnequalZero = true;
+          var sum = addSy.CreateTreeNode();
+          sum.AddSubtree(createLinearExpression(coeff, binar, i - d + 1, i, varNames));
+          sum.AddSubtree(expression);
+          expression = sum;
+        }
+
+        if (firstCoeffUnequalZero == true && i > 2 * d) { // don't take the first coeffVecPart and don't take the last coeffVecPart (both are only to add)
+          if (linearFunctionEqualZero(coeff, binar, i - 2 * d + 1, i - d) == false) {
+            /* div-by-zero cannot be determined for the expression 
+            if (valueNearZero(value) == true)  // no division by zero
+              return double.MaxValue;
+            else {
+            */
+              var frac = divSy.CreateTreeNode();
+              frac.AddSubtree(createLinearExpression(coeff, binar, i - 2 * d + 1, i - d, varNames));
+              frac.AddSubtree(expression);
+              expression = frac;
+            /* } */
+          } else {
+            // don't allow coeffVecParts in middle to be equal zero
+            var errorConst = (ConstantTreeNode)constSy.CreateTreeNode();
+            errorConst.Value = double.MaxValue;
+            expression = errorConst; 
+          }
+        }
+      }
+
+      var startNode = startSy.CreateTreeNode();
+      var progRootNode = progRootSy.CreateTreeNode();
+      startNode.AddSubtree(progRootNode);
+      progRootNode.AddSubtree(expression);
+      return new SymbolicExpressionTree(progRootNode) ;
     }
 
     private void InitDataTables(ResultCollection results) {
@@ -443,13 +496,13 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
     private void InitScatterPlots(ResultCollection results) {
       #region curves 0.001
       ScatterPlot curves0_001 = new ScatterPlot("Curves0_001", "Kurven mit Phi'=0.001");
-      readCurve(curves0_001, "data6082_350_0_001", "Temp350", System.Drawing.Color.Blue);
-      readCurve(curves0_001, "data6082_375_0_001", "Temp375", System.Drawing.Color.Orange);
-      readCurve(curves0_001, "data6082_400_0_001", "Temp400", System.Drawing.Color.Red);
-      readCurve(curves0_001, "data6082_425_0_001", "Temp425", System.Drawing.Color.Green);
-      readCurve(curves0_001, "data6082_450_0_001", "Temp450", System.Drawing.Color.Gray);
-      readCurve(curves0_001, "data6082_475_0_001", "Temp475", System.Drawing.Color.Olive);
-      readCurve(curves0_001, "data6082_500_0_001", "Temp500", System.Drawing.Color.Gold);
+      readCurve(curves0_001, "data_350_0_001", "Temp350", System.Drawing.Color.Blue);
+      readCurve(curves0_001, "data_375_0_001", "Temp375", System.Drawing.Color.Orange);
+      readCurve(curves0_001, "data_400_0_001", "Temp400", System.Drawing.Color.Red);
+      readCurve(curves0_001, "data_425_0_001", "Temp425", System.Drawing.Color.Green);
+      readCurve(curves0_001, "data_450_0_001", "Temp450", System.Drawing.Color.Gray);
+      readCurve(curves0_001, "data_475_0_001", "Temp475", System.Drawing.Color.Olive);
+      readCurve(curves0_001, "data_500_0_001", "Temp500", System.Drawing.Color.Gold);
 
       var empty0_001 = new Point2D<double>[0];
       ScatterPlotDataRow Temp350Convergence0_001 = new ScatterPlotDataRow("Temp350Convergence", "Temp350Convergence", empty0_001);
@@ -486,18 +539,18 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       Temp500Convergence0_001.VisualProperties.Color = System.Drawing.Color.Gold;
       Temp500Convergence0_001.VisualProperties.PointSize = 2;
       curves0_001.Rows.Add(Temp500Convergence0_001);
-      results.Add(new Result("Curves0_001", curves0_001));
+      results.AddOrUpdateResult("Curves0_001", curves0_001);
 
       #endregion
       #region curves 0.01
       ScatterPlot curves0_01 = new ScatterPlot("Curves0_01", "Kurven mit Phi'=0.01");
-      readCurve(curves0_01, "data6082_350_0_01", "Temp350", System.Drawing.Color.Blue);
-      readCurve(curves0_01, "data6082_375_0_01", "Temp375", System.Drawing.Color.Orange);
-      readCurve(curves0_01, "data6082_400_0_01", "Temp400", System.Drawing.Color.Red);
-      readCurve(curves0_01, "data6082_425_0_01", "Temp425", System.Drawing.Color.Green);
-      readCurve(curves0_01, "data6082_450_0_01", "Temp450", System.Drawing.Color.Gray);
-      readCurve(curves0_01, "data6082_475_0_01", "Temp475", System.Drawing.Color.Olive);
-      readCurve(curves0_01, "data6082_500_0_01", "Temp500", System.Drawing.Color.Gold);
+      readCurve(curves0_01, "data_350_0_01", "Temp350", System.Drawing.Color.Blue);
+      readCurve(curves0_01, "data_375_0_01", "Temp375", System.Drawing.Color.Orange);
+      readCurve(curves0_01, "data_400_0_01", "Temp400", System.Drawing.Color.Red);
+      readCurve(curves0_01, "data_425_0_01", "Temp425", System.Drawing.Color.Green);
+      readCurve(curves0_01, "data_450_0_01", "Temp450", System.Drawing.Color.Gray);
+      readCurve(curves0_01, "data_475_0_01", "Temp475", System.Drawing.Color.Olive);
+      readCurve(curves0_01, "data_500_0_01", "Temp500", System.Drawing.Color.Gold);
 
       var empty0_01 = new Point2D<double>[0];
       ScatterPlotDataRow Temp350Convergence0_01 = new ScatterPlotDataRow("Temp350Convergence", "Temp350Convergence", empty0_01);
@@ -534,18 +587,18 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       Temp500Convergence0_01.VisualProperties.Color = System.Drawing.Color.Gold;
       Temp500Convergence0_01.VisualProperties.PointSize = 2;
       curves0_01.Rows.Add(Temp500Convergence0_01);
-      results.Add(new Result("Curves0_01", curves0_01));
+      results.AddOrUpdateResult("Curves0_01", curves0_01);
 
       #endregion
       #region curves 0.1
       ScatterPlot curves0_1 = new ScatterPlot("Curves0_1", "Kurven mit Phi'=0.1");
-      readCurve(curves0_1, "data6082_350_0_1", "Temp350", System.Drawing.Color.Blue);
-      readCurve(curves0_1, "data6082_375_0_1", "Temp375", System.Drawing.Color.Orange);
-      readCurve(curves0_1, "data6082_400_0_1", "Temp400", System.Drawing.Color.Red);
-      readCurve(curves0_1, "data6082_425_0_1", "Temp425", System.Drawing.Color.Green);
-      readCurve(curves0_1, "data6082_450_0_1", "Temp450", System.Drawing.Color.Gray);
-      readCurve(curves0_1, "data6082_475_0_1", "Temp475", System.Drawing.Color.Olive);
-      readCurve(curves0_1, "data6082_500_0_1", "Temp500", System.Drawing.Color.Gold);
+      readCurve(curves0_1, "data_350_0_1", "Temp350", System.Drawing.Color.Blue);
+      readCurve(curves0_1, "data_375_0_1", "Temp375", System.Drawing.Color.Orange);
+      readCurve(curves0_1, "data_400_0_1", "Temp400", System.Drawing.Color.Red);
+      readCurve(curves0_1, "data_425_0_1", "Temp425", System.Drawing.Color.Green);
+      readCurve(curves0_1, "data_450_0_1", "Temp450", System.Drawing.Color.Gray);
+      readCurve(curves0_1, "data_475_0_1", "Temp475", System.Drawing.Color.Olive);
+      readCurve(curves0_1, "data_500_0_1", "Temp500", System.Drawing.Color.Gold);
 
       var empty0_1 = new Point2D<double>[0];
       ScatterPlotDataRow Temp350Convergence0_1 = new ScatterPlotDataRow("Temp350Convergence", "Temp350Convergence", empty0_1);
@@ -582,17 +635,17 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       Temp500Convergence0_1.VisualProperties.Color = System.Drawing.Color.Gold;
       Temp500Convergence0_1.VisualProperties.PointSize = 2;
       curves0_1.Rows.Add(Temp500Convergence0_1);
-      results.Add(new Result("Curves0_1", curves0_1));
+      results.AddOrUpdateResult("Curves0_1", curves0_1);
       #endregion
       #region curves 1
       ScatterPlot curves1 = new ScatterPlot("Curves1", "Kurven mit Phi'=1");
-      readCurve(curves1, "data6082_350_1", "Temp350", System.Drawing.Color.Blue);
-      readCurve(curves1, "data6082_375_1", "Temp375", System.Drawing.Color.Orange);
-      readCurve(curves1, "data6082_400_1", "Temp400", System.Drawing.Color.Red);
-      readCurve(curves1, "data6082_425_1", "Temp425", System.Drawing.Color.Green);
-      readCurve(curves1, "data6082_450_1", "Temp450", System.Drawing.Color.Gray);
-      readCurve(curves1, "data6082_475_1", "Temp475", System.Drawing.Color.Olive);
-      readCurve(curves1, "data6082_500_1", "Temp500", System.Drawing.Color.Gold);
+      readCurve(curves1, "data_350_1", "Temp350", System.Drawing.Color.Blue);
+      readCurve(curves1, "data_375_1", "Temp375", System.Drawing.Color.Orange);
+      readCurve(curves1, "data_400_1", "Temp400", System.Drawing.Color.Red);
+      readCurve(curves1, "data_425_1", "Temp425", System.Drawing.Color.Green);
+      readCurve(curves1, "data_450_1", "Temp450", System.Drawing.Color.Gray);
+      readCurve(curves1, "data_475_1", "Temp475", System.Drawing.Color.Olive);
+      readCurve(curves1, "data_500_1", "Temp500", System.Drawing.Color.Gold);
 
       var empty1 = new Point2D<double>[0];
       ScatterPlotDataRow Temp350Convergence1 = new ScatterPlotDataRow("Temp350Convergence", "Temp350Convergence", empty1);
@@ -629,7 +682,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       Temp500Convergence1.VisualProperties.Color = System.Drawing.Color.Gold;
       Temp500Convergence1.VisualProperties.PointSize = 2;
       curves1.Rows.Add(Temp500Convergence1);
-      results.Add(new Result("Curves1", curves1));
+      results.AddOrUpdateResult("Curves1", curves1);
       #endregion
     }
 
@@ -731,6 +784,34 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       return value;
     }
 
+    // symbols to be used in expression trees
+    private static Addition addSy = new Addition();
+    private static Division divSy = new Division();
+    private static HeuristicLab.Problems.DataAnalysis.Symbolic.Variable varSy = new Problems.DataAnalysis.Symbolic.Variable();
+    private static Constant constSy = new Constant();
+    private static StartSymbol startSy = new StartSymbol();
+    private static ProgramRootSymbol progRootSy = new ProgramRootSymbol();
+    private ISymbolicExpressionTreeNode createLinearExpression(double[] coeff, bool[] binar, int start, int end, string[] varNames) {
+      var sum = addSy.CreateTreeNode();
+
+      for (int i = start; i < end; i++) {
+        if (binar[i] == true) {
+          var varNode = (VariableTreeNode)varSy.CreateTreeNode();
+          varNode.VariableName = varNames[i - start];
+          varNode.Weight = coeff[i];
+          sum.AddSubtree(varNode);
+        }
+      }
+      if (binar[end] == true) {
+        var constNode = (ConstantTreeNode)constSy.CreateTreeNode();
+        constNode.Value = coeff[end];
+        sum.AddSubtree(constNode);
+      }
+
+      //doubleThrowInvOrNaN(value, "evaluateLinearFunctionValue");
+      return sum;
+    }
+
     private bool valueNearZero(double value) {
       if (Math.Abs(value) < epsilon)
         return true;
@@ -754,7 +835,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
     }
 
     private double calculateRegMSE(double quality, bool[] binar, double penalty) {
-      return (quality / dataMatrix.Rows) * (1 + penalty * (double)numVariablesUsed(binar));
+      return (quality / dataMatrix.Rows) * (1 + penalty * numVariablesUsed(binar));
     }
 
     private double calculateElasticNet(double quality, double[] coeff, bool[] binar) {

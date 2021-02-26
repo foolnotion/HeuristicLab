@@ -114,7 +114,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Exporters\SymbolicSolutionExcelExporter.cs" />
-    <Compile Include="InteractiveSymbolicExpressionTreeChart.cs" />
+    <Compile Include="InteractiveSymbolicExpressionTreeChart.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
     <Compile Include="InteractiveSymbolicExpressionTreeChart.Designer.cs">
       <DependentUpon>InteractiveSymbolicExpressionTreeChart.cs</DependentUpon>
     </Compile>
@@ -143,23 +145,33 @@
     <Compile Include="GraphicalSymbolicDataAnalysisModelView.designer.cs">
       <DependentUpon>GraphicalSymbolicDataAnalysisModelView.cs</DependentUpon>
     </Compile>
-    <Compile Include="Symbols\ConstantView.cs" />
+    <Compile Include="Symbols\ConstantView.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
     <Compile Include="Symbols\ConstantView.Designer.cs">
       <DependentUpon>ConstantView.cs</DependentUpon>
     </Compile>
-    <Compile Include="Symbols\LaggedVariableView.cs" />
+    <Compile Include="Symbols\LaggedVariableView.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
     <Compile Include="Symbols\LaggedVariableView.Designer.cs">
       <DependentUpon>LaggedVariableView.cs</DependentUpon>
     </Compile>
-    <Compile Include="Symbols\TimeLagView.cs" />
+    <Compile Include="Symbols\TimeLagView.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
     <Compile Include="Symbols\TimeLagView.Designer.cs">
       <DependentUpon>TimeLagView.cs</DependentUpon>
     </Compile>
-    <Compile Include="Symbols\VariableConditionView.cs" />
+    <Compile Include="Symbols\VariableConditionView.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
     <Compile Include="Symbols\VariableConditionView.Designer.cs">
       <DependentUpon>VariableConditionView.cs</DependentUpon>
     </Compile>
-    <Compile Include="Symbols\VariableView.cs" />
+    <Compile Include="Symbols\VariableView.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
     <Compile Include="Symbols\VariableView.Designer.cs">
       <DependentUpon>VariableView.cs</DependentUpon>
     </Compile>
