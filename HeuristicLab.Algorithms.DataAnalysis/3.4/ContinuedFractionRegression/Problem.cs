@@ -13,6 +13,7 @@ using HeuristicLab.Optimization;
 using HeuristicLab.Parameters;
 using HeuristicLab.Problems.DataAnalysis;
 using HeuristicLab.Problems.DataAnalysis.Symbolic;
+using HeuristicLab.Problems.DataAnalysis.Symbolic.Regression;
 using HeuristicLab.Problems.Instances;
 
 namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
@@ -416,7 +417,23 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       #endregion
       #endregion
 
-      results.AddOrUpdateResult("Model", CreateSymbolicExpressionTree(binar, coeff, TrainingTrainingDataset.VariableNames.ToArray()));
+      #region create tree and regression solution
+      var allVariables = TrainingTrainingDataset.VariableNames;
+      var allowedInputVariables = allVariables.Take(allVariables.Count() - 1);
+      var targetVariable = allVariables.Last();
+
+      var tree = CreateSymbolicExpressionTree(binar, coeff, TrainingTrainingDataset.VariableNames.ToArray());
+      var model = new SymbolicRegressionModel(targetVariable, tree, new SymbolicDataAnalysisExpressionTreeLinearInterpreter());
+      var combinedData = MatrixExtensions.VertCat(dataMatrix.CloneAsMatrix(), dataMatrixTest.CloneAsMatrix());
+      var combinedDs = new Dataset(allVariables, combinedData);
+      var problemData = new RegressionProblemData(combinedDs, allowedInputVariables, targetVariable);
+      problemData.TrainingPartition.Start = 0;
+      problemData.TrainingPartition.End = dataMatrix.Rows;
+      problemData.TestPartition.Start = dataMatrix.Rows;
+      problemData.TestPartition.End = combinedDs.Rows;
+      var sol = new SymbolicRegressionSolution(model, problemData);
+      results.AddOrUpdateResult("Solution", sol);
+      #endregion
     }
 
     private ISymbolicExpressionTree CreateSymbolicExpressionTree(bool[] binar, double[] coeff, string[] varNames) {
@@ -456,10 +473,10 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       }
 
       var startNode = startSy.CreateTreeNode();
-      var progRootNode = progRootSy.CreateTreeNode();
-      startNode.AddSubtree(progRootNode);
-      progRootNode.AddSubtree(expression);
-      return new SymbolicExpressionTree(progRootNode) ;
+      var progRoot = progRootSy.CreateTreeNode();
+      progRoot.AddSubtree(startNode);
+      startNode.AddSubtree(expression);
+      return new SymbolicExpressionTree(progRoot) ;
     }
 
     private void InitDataTables(ResultCollection results) {
