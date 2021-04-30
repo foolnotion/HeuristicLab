@@ -135,12 +135,15 @@
     <Compile Include="BaselineClassifiers\OneRClassificationModel.cs" />
     <Compile Include="BaselineClassifiers\OneRClassificationSolution.cs" />
     <Compile Include="BaselineClassifiers\ZeroR.cs" />
+    <Compile Include="ContinuedFractionRegression\Algorithm.cs" />
+    <Compile Include="ContinuedFractionRegression\ContinuedFraction.cs" />
     <Compile Include="ContinuedFractionRegression\NelderMeadSimplex.cs" />
     <Compile Include="ContinuedFractionRegression\NumUtilsTest.cs" />
     <Compile Include="ContinuedFractionRegression\Problem.cs" />
     <Compile Include="ContinuedFractionRegression\ObjFunctionNelderMead.cs" />
     <Compile Include="ContinuedFractionRegression\RegressionResult.cs" />
     <Compile Include="ContinuedFractionRegression\SimplexConstant.cs" />
+    <Compile Include="ContinuedFractionRegression\Term.cs" />
     <Compile Include="ContinuedFractionRegression\Transformation.cs" />
     <Compile Include="ContinuedFractionRegression\Vector.cs" />
     <Compile Include="CrossValidation.cs">
