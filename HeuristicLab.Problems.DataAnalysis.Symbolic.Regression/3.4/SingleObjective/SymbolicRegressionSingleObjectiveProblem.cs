@@ -55,8 +55,11 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.Regression {
     }
     public override IDeepCloneable Clone(Cloner cloner) { return new SymbolicRegressionSingleObjectiveProblem(this, cloner); }
 
-    public SymbolicRegressionSingleObjectiveProblem()
-      : base(new RegressionProblemData(), new SymbolicRegressionSingleObjectivePearsonRSquaredEvaluator(), new SymbolicDataAnalysisExpressionTreeCreator()) {
+    public SymbolicRegressionSingleObjectiveProblem() : this(new RegressionProblemData(), new SymbolicRegressionSingleObjectivePearsonRSquaredEvaluator(), new SymbolicDataAnalysisExpressionTreeCreator()) {
+    }
+    public SymbolicRegressionSingleObjectiveProblem(IRegressionProblemData problemData, ISymbolicRegressionSingleObjectiveEvaluator evaluator, ISymbolicDataAnalysisSolutionCreator solutionCreator) :
+      base(problemData, evaluator, solutionCreator) {
+
       Parameters.Add(new FixedValueParameter<DoubleLimit>(EstimationLimitsParameterName, EstimationLimitsParameterDescription));
 
       EstimationLimitsParameter.Hidden = true;
@@ -90,6 +93,11 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.Regression {
         Operators.Add(new SymbolicRegressionSolutionsAnalyzer());
         changed = true;
       }
+
+      if (!Operators.OfType<ShapeConstraintsAnalyzer>().Any()) {
+        Operators.Add(new ShapeConstraintsAnalyzer());
+        changed = true;
+      }
       if (changed) {
         ParameterizeOperators();
       }
@@ -112,6 +120,7 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.Regression {
       Operators.Add(new SymbolicRegressionSingleObjectiveValidationParetoBestSolutionAnalyzer());
       Operators.Add(new SymbolicRegressionSolutionsAnalyzer());
       Operators.Add(new SymbolicExpressionTreePhenotypicSimilarityCalculator());
+      Operators.Add(new ShapeConstraintsAnalyzer());
       Operators.Add(new SymbolicRegressionPhenotypicDiversityAnalyzer(Operators.OfType<SymbolicExpressionTreePhenotypicSimilarityCalculator>()) { DiversityResultName = "Phenotypic Diversity" });
       ParameterizeOperators();
     }
