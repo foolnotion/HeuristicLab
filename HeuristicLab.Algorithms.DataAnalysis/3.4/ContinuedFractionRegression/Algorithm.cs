@@ -23,22 +23,22 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
 
       var x = problemData.Dataset.ToArray(problemData.AllowedInputVariables.Concat(new[] { problemData.TargetVariable }),
         problemData.TrainingIndices);
-      var nVars = x.GetLength(1);
+      var nVars = x.GetLength(1) - 1;
       var rand = new MersenneTwister(31415);
-      CFRAlgorithm(nVars, depth: 4, 0.10, x, out var best, out var bestObj, rand, numGen: 200, cancellationToken);
+      CFRAlgorithm(nVars, depth: 6, 0.10, x, out var best, out var bestObj, rand, numGen: 200, stagnatingGens: 5, cancellationToken);
     }
 
     private void CFRAlgorithm(int nVars, int depth, double mutationRate, double[,] trainingData,
       out ContinuedFraction best, out double bestObj,
-      IRandom rand, int numGen,
-      CancellationToken cancellation) {
+      IRandom rand, int numGen, int stagnatingGens,
+      CancellationToken cancellationToken) {
       /* Algorithm 1 */
       /* Generate initial population by a randomized algorithm */
       var pop = InitialPopulation(nVars, depth, rand, trainingData);
       best = pop.pocket;
       bestObj = pop.pocketObjValue;
-
-      for (int gen = 1; gen <= numGen && !cancellation.IsCancellationRequested; gen++) {
+      var bestObjGen = 0;
+      for (int gen = 1; gen <= numGen && !cancellationToken.IsCancellationRequested; gen++) {
         /* mutate each current solution in the population */
         var pop_mu = Mutate(pop, mutationRate, rand);
         /* generate new population by recombination mechanism */
@@ -46,16 +46,10 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
 
         /* local search optimization of current solutions */
         foreach (var agent in pop_r.IterateLevels()) {
-          LocalSearchSimplex(agent.current, trainingData, rand);
+          LocalSearchSimplex(agent.current, ref agent.currentObjValue, trainingData, rand);
         }
 
         foreach (var agent in pop_r.IteratePostOrder()) agent.MaintainInvariant(); // Deviates from Alg1 in paper 
-
-        /* TODO 
-        if (stagnating(curQuality, bestQuality, numStagnatingGensForReset)) {
-          Reset(pop_r.root);
-        }
-        */
 
         /* replace old population with evolved population */
         pop = pop_r;
@@ -64,7 +58,15 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
         if (bestObj > pop.pocketObjValue) {
           best = pop.pocket;
           bestObj = pop.pocketObjValue;
+          bestObjGen = gen;
           Results.AddOrUpdateResult("MSE (best)", new DoubleValue(bestObj));
+        }
+
+
+        if (gen > bestObjGen + stagnatingGens) {
+          bestObjGen = gen; // wait at least stagnatingGens until resetting again
+          // Reset(pop, nVars, depth, rand, trainingData);
+          InitialPopulation(nVars, depth, rand, trainingData);
         }
       }
     }
@@ -94,6 +96,22 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       }
       return pop;
     }
+
+    // TODO: reset is not described in the paper
+    private void Reset(Agent root, int nVars, int depth, IRandom rand, double[,] trainingData) {
+      root.pocket = new ContinuedFraction(nVars, depth, rand);
+      root.current = new ContinuedFraction(nVars, depth, rand);
+
+      root.currentObjValue = Evaluate(root.current, trainingData);
+      root.pocketObjValue = Evaluate(root.pocket, trainingData);
+
+      /* within each agent, the pocket solution always holds the better value of guiding
+       * function than its current solution
+       */
+      root.MaintainInvariant();
+    }
+
+
 
     private Agent RecombinePopulation(Agent pop, IRandom rand, int nVars) {
       var l = pop;
@@ -181,7 +199,8 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
           if (agent.currentObjValue < 1.2 * agent.pocketObjValue ||
              agent.currentObjValue > 2 * agent.pocketObjValue)
             ToggleVariables(agent.current, rand); // major mutation
-          else ModifyVariable(agent.current, rand); // soft mutation
+          else
+            ModifyVariable(agent.current, rand); // soft mutation
         }
       }
       return pop;
@@ -257,22 +276,23 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       for (int i = cfrac.h.Length - 1; i > 1; i -= 2) {
         var hi = cfrac.h[i];
         var hi1 = cfrac.h[i - 1];
-        var denom = hi.beta + dot(dataPoint, hi.coef) + res;
-        var numerator = hi1.beta + dot(dataPoint, hi1.coef);
+        var denom = hi.beta + dot(hi.vars, hi.coef, dataPoint) + res;
+        var numerator = hi1.beta + dot(hi1.vars, hi1.coef, dataPoint);
         res = numerator / denom;
       }
       return res;
     }
 
-    private static double dot(double[] x, double[] y) {
+    private static double dot(bool[] filter, double[] x, double[] y) {
       var s = 0.0;
       for (int i = 0; i < x.Length; i++)
-        s += x[i] * y[i];
+        if (filter[i])
+          s += x[i] * y[i];
       return s;
     }
 
 
-    private static ContinuedFraction LocalSearchSimplex(ContinuedFraction ch, double[,] trainingData, IRandom rand) {
+    private static void LocalSearchSimplex(ContinuedFraction ch, ref double quality, double[,] trainingData, IRandom rand) {
       double uniformPeturbation = 1.0;
       double tolerance = 1e-3;
       int maxEvals = 250;
@@ -280,10 +300,12 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       var numRows = trainingData.GetLength(0);
       int numSelectedRows = numRows / 5; // 20% of the training samples
 
-      double[] origCoeff = ExtractCoeff(ch);
-      if (origCoeff.Length == 0) return ch; // no parameters to optimize
+      quality = Evaluate(ch, trainingData); // get quality with origial coefficients
 
-      var bestQuality = Evaluate(ch, trainingData); // get quality with origial coefficients
+      double[] origCoeff = ExtractCoeff(ch);
+      if (origCoeff.Length == 0) return; // no parameters to optimize
+
+      var bestQuality = quality;
       var bestCoeff = origCoeff;
 
       var fittingData = SelectRandomRows(trainingData, numSelectedRows, rand);
@@ -316,7 +338,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       } // reps
 
       SetCoeff(ch, bestCoeff);
-      return ch;
+      quality = bestQuality;
     }
 
     private static double[,] SelectRandomRows(double[,] trainingData, int numSelectedRows, IRandom rand) {
@@ -337,6 +359,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
     private static double[] ExtractCoeff(ContinuedFraction ch) {
       var coeff = new List<double>();
       foreach (var hi in ch.h) {
+        coeff.Add(hi.beta);
         for (int vIdx = 0; vIdx < hi.vars.Length; vIdx++) {
           if (hi.vars[vIdx]) coeff.Add(hi.coef[vIdx]);
         }
@@ -347,6 +370,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
     private static void SetCoeff(ContinuedFraction ch, double[] curCoeff) {
       int k = 0;
       foreach (var hi in ch.h) {
+        hi.beta = curCoeff[k++];
         for (int vIdx = 0; vIdx < hi.vars.Length; vIdx++) {
           if (hi.vars[vIdx]) hi.coef[vIdx] = curCoeff[k++];
         }
