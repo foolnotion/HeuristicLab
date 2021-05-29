@@ -1,5 +1,4 @@
 ﻿using HeuristicLab.Core;
-using HeuristicLab.Problems.DataAnalysis;
 
 namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
   public class ContinuedFraction {

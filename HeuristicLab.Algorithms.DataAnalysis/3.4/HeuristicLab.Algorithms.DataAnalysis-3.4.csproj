@@ -135,6 +135,7 @@
     <Compile Include="BaselineClassifiers\OneRClassificationModel.cs" />
     <Compile Include="BaselineClassifiers\OneRClassificationSolution.cs" />
     <Compile Include="BaselineClassifiers\ZeroR.cs" />
+    <Compile Include="ContinuedFractionRegression\Agent.cs" />
     <Compile Include="ContinuedFractionRegression\Algorithm.cs" />
     <Compile Include="ContinuedFractionRegression\ContinuedFraction.cs" />
     <Compile Include="ContinuedFractionRegression\NelderMeadSimplex.cs" />
