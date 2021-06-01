@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using HEAL.Attic;
@@ -161,10 +162,14 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       var episodeBestObjGen = 0;
       for (int gen = 1; gen <= numGen && !cancellationToken.IsCancellationRequested; gen++) {
         /* mutate each current solution in the population */
-        var pop_mu = Mutate(pop, mutationRate, rand);
+        var pop_mu = Mutate(pop, mutationRate, rand, trainingData);
         /* generate new population by recombination mechanism */
-        var pop_r = RecombinePopulation(pop_mu, rand, nVars);
+        var pop_r = RecombinePopulation(pop_mu, rand, nVars, trainingData);
 
+        // Paper:
+        // A period of individual search operation is performed every generation on all current solutions.
+
+        // Statement by authors:
         // "We ran the Local Search after Mutation and recombination operations. We executed the local-search only on the Current solutions."
         // "We executed the MaintainInvariant() in the following steps:
         // - After generating the initial population
@@ -174,10 +179,11 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
 
         /* local search optimization of current solutions */
         foreach (var agent in pop_r.IterateLevels()) {
-          LocalSearchSimplex(localSearchIterations, localSearchRestarts, localSearchTolerance, evalDelta, agent.current, ref agent.currentObjValue, trainingData, rand);
+          LocalSearchSimplex(localSearchIterations, localSearchRestarts, localSearchTolerance, evalDelta, agent, trainingData, rand);
+          Debug.Assert(agent.pocketObjValue < agent.currentObjValue);
         }
         foreach (var agent in pop_r.IteratePostOrder()) agent.MaintainInvariant(); // post-order to make sure that the root contains the best model 
-
+        foreach (var agent in pop_r.IteratePostOrder()) agent.AssertInvariant();
 
         // for detecting stagnation we track the best objective value since the last reset 
         // and reset if this does not change for stagnatingGens
@@ -251,6 +257,9 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
          */
         agent.MaintainInvariant();
       }
+
+      foreach (var agent in pop.IteratePostOrder()) agent.AssertInvariant();
+
       return pop;
     }
 
@@ -265,12 +274,15 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       root.currentObjValue = Evaluate(root.current, trainingData, Delta);
       root.pocketObjValue = Evaluate(root.pocket, trainingData, Delta);
 
-      foreach (var agent in root.IteratePreOrder()) { agent.MaintainInvariant(); } // Here we push the newly created model down the hierarchy. 
+      foreach (var agent in root.IteratePreOrder()) { agent.MaintainInvariant(); } // Here we use pre-order traversal push the newly created model down the hierarchy. 
+
+      foreach (var agent in root.IteratePostOrder()) agent.AssertInvariant();
+
     }
 
 
 
-    private Agent RecombinePopulation(Agent pop, IRandom rand, int nVars) {
+    private Agent RecombinePopulation(Agent pop, IRandom rand, int nVars, double[,] trainingData) {
       var l = pop;
 
       if (pop.children.Count > 0) {
@@ -283,22 +295,24 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
         // Step 2 to generate current(s3). The current(s3) from Step 2 is being used at
         // Step 4. These steps are executed sequentially from 1 to 4. Similarly, in the
         // recombination of lower-level subpopulations, we will have the new current
-        // (the supporters generated at the previous level) as the leader of the subpopulation.
-        l.current = Recombine(l.pocket, s1.current, SelectRandomOp(rand), rand, nVars);
-        s3.current = Recombine(s3.pocket, l.current, SelectRandomOp(rand), rand, nVars);
-        s1.current = Recombine(s1.pocket, s2.current, SelectRandomOp(rand), rand, nVars);
-        s2.current = Recombine(s2.pocket, s3.current, SelectRandomOp(rand), rand, nVars);
+        // (the supporters generated at the previous level) as the leader of the subpopulation."
+        Recombine(l, s1, SelectRandomOp(rand), rand, nVars, trainingData);
+        Recombine(s3, l, SelectRandomOp(rand), rand, nVars, trainingData);
+        Recombine(s1, s2, SelectRandomOp(rand), rand, nVars, trainingData);
+        Recombine(s2, s3, SelectRandomOp(rand), rand, nVars, trainingData);
 
         // recombination works from top to bottom
         foreach (var child in pop.children) {
-          RecombinePopulation(child, rand, nVars);
+          RecombinePopulation(child, rand, nVars, trainingData);
         }
 
       }
       return pop;
     }
 
-    private static ContinuedFraction Recombine(ContinuedFraction p1, ContinuedFraction p2, Func<bool[], bool[], bool[]> op, IRandom rand, int nVars) {
+    private ContinuedFraction Recombine(Agent a, Agent b, Func<bool[], bool[], bool[]> op, IRandom rand, int nVars, double[,] trainingData) {
+      ContinuedFraction p1 = a.pocket;
+      ContinuedFraction p2 = b.pocket;
       ContinuedFraction ch = new ContinuedFraction() { h = new Term[p1.h.Length] };
       /* apply a recombination operator chosen uniformly at random on variables of two parents into offspring */
       ch.vars = op(p1.vars, p2.vars);
@@ -331,14 +345,13 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
          * beta of p1.hi and p2.hi */
         ch.h[i].beta = p1.h[i].beta + (rand.NextDouble() * 5 - 1) * (p2.h[i].beta - p1.h[i].beta) / 3.0;
       }
-      // return LocalSearchSimplex(ch, trainingData); // The paper has a local search step here. 
-      // The authors have stated that local search is executed after mutation and recombination
-      // for the current solutions.
-      // Local search and MaintainInvariant is called in the main loop (Alg 1)
+
+      a.current = ch;
+      LocalSearchSimplex(LocalSearchIterations, LocalSearchRestarts, LocalSearchTolerance, Delta, a, trainingData, rand);
       return ch;
     }
 
-    private Agent Mutate(Agent pop, double mutationRate, IRandom rand) {
+    private Agent Mutate(Agent pop, double mutationRate, IRandom rand, double[,] trainingData) {
       foreach (var agent in pop.IterateLevels()) {
         if (rand.NextDouble() < mutationRate) {
           if (agent.currentObjValue < 1.2 * agent.pocketObjValue ||
@@ -346,6 +359,11 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
             ToggleVariables(agent.current, rand); // major mutation
           else
             ModifyVariable(agent.current, rand); // soft mutation
+
+          // Finally, the local search operation is executed on the mutated solution in order to optimize
+          // non-zero coefficients. We do not apply mutation on pocket solutions because we consider them as a "collective memory"
+          // of good models visited in the past. They influence the search process via recombination only.
+          LocalSearchSimplex(LocalSearchIterations, LocalSearchRestarts, LocalSearchTolerance, Delta, agent, trainingData, rand);
         }
       }
       return pop;
@@ -364,26 +382,26 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       foreach (var h in cfrac.h) {
         /* Case 1: cfrac variable is turned ON: Turn OFF the variable, and either 'Remove' or 
          * 'Remember' the coefficient value at random */
-        if (cfrac.vars[vIdx]) {  // CHECK: paper uses varAt()
-          h.vars[vIdx] = false;  // CHECK: paper uses varAt()
+        if (cfrac.vars[vIdx]) {
+          h.vars[vIdx] = false;
           h.coef[vIdx] = coinToss(0, h.coef[vIdx]);
         } else {
           /* Case 2: term variable is turned OFF: Turn ON the variable, and either 'Remove' 
            * or 'Replace' the coefficient with a random value between -3 and 3 at random */
           if (!h.vars[vIdx]) {
-            h.vars[vIdx] = true;  // CHECK: paper uses varAt()
+            h.vars[vIdx] = true;
             h.coef[vIdx] = coinToss(0, rand.NextDouble() * 6 - 3);
           }
         }
       }
       /* toggle the randomly selected variable */
-      cfrac.vars[vIdx] = !cfrac.vars[vIdx];  // CHECK: paper uses varAt()
+      cfrac.vars[vIdx] = !cfrac.vars[vIdx];
     }
 
     private void ModifyVariable(ContinuedFraction cfrac, IRandom rand) {
       /* randomly select a variable which is turned ON */
       var candVars = new List<int>();
-      for (int i = 0; i < cfrac.vars.Length; i++) if (cfrac.vars[i]) candVars.Add(i);  // CHECK: paper uses varAt()
+      for (int i = 0; i < cfrac.vars.Length; i++) if (cfrac.vars[i]) candVars.Add(i);
       if (candVars.Count == 0) return; // no variable active
       var vIdx = candVars[rand.Next(candVars.Count)];
 
@@ -391,13 +409,13 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       var h = cfrac.h[rand.Next(cfrac.h.Length)];
 
       /* modify the coefficient value */
-      if (h.vars[vIdx]) {  // CHECK: paper uses varAt()
+      if (h.vars[vIdx]) {
         h.coef[vIdx] = 0.0;
       } else {
         h.coef[vIdx] = rand.NextDouble() * 6 - 3;
       }
       /* Toggle the randomly selected variable */
-      h.vars[vIdx] = !h.vars[vIdx]; // CHECK: paper uses varAt()
+      h.vars[vIdx] = !h.vars[vIdx];
     }
 
     private static double Evaluate(ContinuedFraction cfrac, double[,] trainingData, double delta) {
@@ -464,14 +482,15 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
     }
 
 
-    private static void LocalSearchSimplex(int iterations, int restarts, double tolerance, double delta, ContinuedFraction ch, ref double quality, double[,] trainingData, IRandom rand) {
+    private static void LocalSearchSimplex(int iterations, int restarts, double tolerance, double delta, Agent a, double[,] trainingData, IRandom rand) {
       double uniformPeturbation = 1.0;
       int maxEvals = iterations;
       int numSearches = restarts + 1;
       var numRows = trainingData.GetLength(0);
       int numSelectedRows = numRows / 5; // 20% of the training samples
 
-      quality = Evaluate(ch, trainingData, delta); // get quality with origial coefficients
+      var ch = a.current;
+      var quality = Evaluate(ch, trainingData, delta); // get quality with original coefficients
 
       double[] origCoeff = ExtractCoeff(ch);
       if (origCoeff.Length == 0) return; // no parameters to optimize
@@ -506,8 +525,19 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
         }
       } // reps
 
-      SetCoeff(ch, bestCoeff);
-      quality = bestQuality;
+      SetCoeff(a.current, bestCoeff);
+      a.currentObjValue = bestQuality;
+
+      // Unclear what the following means exactly. 
+      // 
+      // "We remind again that
+      // each solution corresponds to a single model, this means that if a current model becomes better than its corresponding
+      // pocket model (in terms of the guiding function of the solution), then an individual search optimization step is also
+      // performed on the pocket solution/ model before we swap it with the current solution/ model. Individual search can then
+      // make a current model better than the pocket model (again, according to the guiding function), and in that case they
+      // switch positions within the agent that contains both of them."
+
+      a.MaintainPocketCurrentInvariant();
     }
 
     private static double[,] SelectRandomRows(double[,] trainingData, int numSelectedRows, IRandom rand) {
@@ -530,7 +560,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       foreach (var hi in ch.h) {
         coeff.Add(hi.beta);
         for (int vIdx = 0; vIdx < hi.vars.Length; vIdx++) {
-          if (hi.vars[vIdx]) coeff.Add(hi.coef[vIdx]);
+          if (hi.vars[vIdx] && hi.coef[vIdx] != 0) coeff.Add(hi.coef[vIdx]); // paper states twice (for mutation and recombination) that non-zero coefficients are optimized
         }
       }
       return coeff.ToArray();
@@ -541,7 +571,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       foreach (var hi in ch.h) {
         hi.beta = curCoeff[k++];
         for (int vIdx = 0; vIdx < hi.vars.Length; vIdx++) {
-          if (hi.vars[vIdx]) hi.coef[vIdx] = curCoeff[k++];
+          if (hi.vars[vIdx] && hi.coef[vIdx] != 0) hi.coef[vIdx] = curCoeff[k++]; // paper states twice (for mutation and recombination) that non-zero coefficients are optimized
         }
       }
     }

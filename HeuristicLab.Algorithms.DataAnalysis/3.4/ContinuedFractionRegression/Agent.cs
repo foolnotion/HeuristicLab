@@ -1,4 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
   public class Agent {
@@ -6,8 +8,29 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
     public double pocketObjValue;
     public ContinuedFraction current;
     public double currentObjValue;
-
     public IList<Agent> children = new List<Agent>();
+
+    public void MaintainPocketCurrentInvariant() {
+      if (currentObjValue < pocketObjValue) {
+        Swap(ref pocket, ref current);
+        Swap(ref pocketObjValue, ref currentObjValue);
+      }
+    }
+
+    public void MaintainInvariant() {
+      foreach (var child in children) {
+        MaintainParentChildInvariant(parent: this, child);
+      }
+      MaintainPocketCurrentInvariant();
+    }
+
+
+    private static void MaintainParentChildInvariant(Agent parent, Agent child) {
+      if (child.pocketObjValue < parent.pocketObjValue) {
+        Swap(ref child.pocket, ref parent.pocket);
+        Swap(ref child.pocketObjValue, ref parent.pocketObjValue);
+      }
+    }
 
     public IEnumerable<Agent> IterateLevels() {
       var agents = new List<Agent>() { this };
@@ -30,23 +53,6 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       IteratePreOrderRec(this, agents);
       return agents;
     }
-    internal void MaintainInvariant() {
-      foreach (var child in children) {
-        MaintainInvariant(parent: this, child);
-      }
-      if (currentObjValue < pocketObjValue) {
-        Swap(ref pocket, ref current);
-        Swap(ref pocketObjValue, ref currentObjValue);
-      }
-    }
-
-
-    private static void MaintainInvariant(Agent parent, Agent child) {
-      if (child.pocketObjValue < parent.pocketObjValue) {
-        Swap(ref child.pocket, ref parent.pocket);
-        Swap(ref child.pocketObjValue, ref parent.pocketObjValue);
-      }
-    }
 
     private void IteratePostOrderRec(Agent agent, List<Agent> agents) {
       foreach (var child in agent.children) {
@@ -67,6 +73,13 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       var temp = a;
       a = b;
       b = temp;
+    }
+
+    internal void AssertInvariant() {
+      Debug.Assert(pocketObjValue <= currentObjValue);
+      foreach (var ch in children) {
+        Debug.Assert(pocketObjValue <= ch.pocketObjValue);
+      }
     }
   }
 }
