@@ -8,7 +8,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
     public ContinuedFraction() { }
     public ContinuedFraction(int nVars, int depth, IRandom rand) {
       this.vars = new bool[nVars];
-      for (int i = 0; i < nVars; i++) vars[i] = rand.NextDouble() < 0.5;
+      for (int i = 0; i < nVars; i++) vars[i] = rand.NextDouble() < 0.3; // page 12 of the preprint. Each input variable then has a probability p = 1/3 to be present in the whitelist
 
       this.h = new Term[depth * 2 + 1];
       for (int i = 0; i < h.Length; i++) {

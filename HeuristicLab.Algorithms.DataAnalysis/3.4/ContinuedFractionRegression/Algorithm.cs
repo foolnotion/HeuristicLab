@@ -36,6 +36,8 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
     private const string LocalSearchToleranceParameterName = "LocalSearchTolerance";
     private const string DeltaParameterName = "Delta";
     private const string ScaleDataParameterName = "ScaleData";
+    private const string LocalSearchMinNumSamplesParameterName = "LocalSearchMinNumSamples";
+    private const string LocalSearchSamplesFractionParameterName = "LocalSearchSamplesFraction";
 
 
     #region parameters
@@ -84,6 +86,16 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       get { return ScaleDataParameter.Value.Value; }
       set { ScaleDataParameter.Value.Value = value; }
     }
+    public IFixedValueParameter<IntValue> LocalSearchMinNumSamplesParameter => (IFixedValueParameter<IntValue>)Parameters[LocalSearchMinNumSamplesParameterName];
+    public int LocalSearchMinNumSamples {
+      get { return LocalSearchMinNumSamplesParameter.Value.Value; }
+      set { LocalSearchMinNumSamplesParameter.Value.Value = value; }
+    }
+    public IFixedValueParameter<PercentValue> LocalSearchSamplesFractionParameter => (IFixedValueParameter<PercentValue>)Parameters[LocalSearchSamplesFractionParameterName];
+    public double LocalSearchSamplesFraction {
+      get { return LocalSearchSamplesFractionParameter.Value.Value; }
+      set { LocalSearchSamplesFractionParameter.Value.Value = value; }
+    }
     #endregion
 
     // storable ctor
@@ -103,10 +115,22 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       Parameters.Add(new FixedValueParameter<IntValue>(StagnationGenerationsParameterName, "Number of generations after which the population is re-initialized (default value 5)", new IntValue(5)));
       Parameters.Add(new FixedValueParameter<IntValue>(LocalSearchIterationsParameterName, "Number of iterations for local search (simplex) (default value 250)", new IntValue(250)));
       Parameters.Add(new FixedValueParameter<IntValue>(LocalSearchRestartsParameterName, "Number of restarts for local search (default value 4)", new IntValue(4)));
-      Parameters.Add(new FixedValueParameter<DoubleValue>(LocalSearchToleranceParameterName, "The tolerance value for local search (simplex) (default value: 1e-3)", new DoubleValue(1e-3)));
+      Parameters.Add(new FixedValueParameter<DoubleValue>(LocalSearchToleranceParameterName, "The tolerance value for local search (simplex) (default value: 1e-3)", new DoubleValue(1e-3))); // page 12 of the preprint
       Parameters.Add(new FixedValueParameter<PercentValue>(DeltaParameterName, "The relative weight for the number of variables term in the fitness function (default value: 10%)", new PercentValue(0.1)));
       Parameters.Add(new FixedValueParameter<BoolValue>(ScaleDataParameterName, "Turns on/off scaling of input variable values to the range [0 .. 1] (default: false)", new BoolValue(false)));
+      Parameters.Add(new FixedValueParameter<IntValue>(LocalSearchMinNumSamplesParameterName, "The minimum number of samples for the local search (default 200)", new IntValue(200)));
+      Parameters.Add(new FixedValueParameter<PercentValue>(LocalSearchSamplesFractionParameterName, "The fraction of samples used for local search. Only used when the number of samples is more than " + LocalSearchMinNumSamplesParameterName + " (default 20%)", new PercentValue(0.2)));
     }
+
+    [StorableHook(HookType.AfterDeserialization)]
+    private void AfterDeserialization() {
+      // for backwards compatibility
+      if (!Parameters.ContainsKey(LocalSearchMinNumSamplesParameterName))
+        Parameters.Add(new FixedValueParameter<IntValue>(LocalSearchMinNumSamplesParameterName, "The minimum number of samples for the local search (default 200)", new IntValue(200)));
+      if (!Parameters.ContainsKey(LocalSearchSamplesFractionParameterName))
+        Parameters.Add(new FixedValueParameter<PercentValue>(LocalSearchSamplesFractionParameterName, "The fraction of samples used for local search. Only used when the number of samples is more than " + LocalSearchMinNumSamplesParameterName + " (default 20%)", new PercentValue(0.2)));
+    }
+
 
     public override IDeepCloneable Clone(Cloner cloner) {
       return new Algorithm(this, cloner);
@@ -115,11 +139,12 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
     protected override void Run(CancellationToken cancellationToken) {
       var problemData = Problem.ProblemData;
       double[,] xy;
+      var transformations = new List<ITransformation<double>>();
       if (ScaleData) {
+        // TODO: scaling via transformations is really ugly.
         // Scale data to range 0 .. 1
         // 
         // Scaling was not used for the experiments in the paper. Statement by the authors: "We did not pre-process the data."
-        var transformations = new List<Transformation<double>>();
         foreach (var input in problemData.AllowedInputVariables) {
           var values = problemData.Dataset.GetDoubleValues(input, problemData.TrainingIndices);
           var linTransformation = new LinearTransformation(problemData.AllowedInputVariables);
@@ -128,10 +153,13 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
           var range = max - min;
           linTransformation.Addend = -min / range;
           linTransformation.Multiplier = 1.0 / range;
+          linTransformation.ColumnParameter.ActualValue = linTransformation.ColumnParameter.ValidValues.First(sv => sv.Value == input);
           transformations.Add(linTransformation);
         }
         // do not scale the target 
-        transformations.Add(new LinearTransformation(problemData.AllowedInputVariables) { Addend = 0.0, Multiplier = 1.0 });
+        var targetTransformation = new LinearTransformation(new string[] { problemData.TargetVariable }) { Addend = 0.0, Multiplier = 1.0 };
+        targetTransformation.ColumnParameter.ActualValue = targetTransformation.ColumnParameter.ValidValues.First(sv => sv.Value == problemData.TargetVariable);
+        transformations.Add(targetTransformation);
         xy = problemData.Dataset.ToArray(problemData.AllowedInputVariables.Concat(new[] { problemData.TargetVariable }),
           transformations,
           problemData.TrainingIndices);
@@ -143,15 +171,47 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       var nVars = xy.GetLength(1) - 1;
       var seed = new System.Random().Next();
       var rand = new MersenneTwister((uint)seed);
+
+      void iterationCallback(Agent pop) {
+        #region visualization and debugging
+        DataTable qualities;
+        int i = 0;
+        if (Results.TryGetValue("Qualities", out var qualitiesResult)) {
+          qualities = (DataTable)qualitiesResult.Value;
+        } else {
+          qualities = new DataTable("Qualities", "Qualities");
+          i = 0;
+          foreach (var node in pop.IterateLevels()) {
+            qualities.Rows.Add(new DataRow($"Quality {i} pocket", "Quality of pocket"));
+            qualities.Rows.Add(new DataRow($"Quality {i} current", "Quality of current"));
+            i++;
+          }
+          Results.AddOrUpdateResult("Qualities", qualities);
+        }
+        i = 0;
+        foreach (var node in pop.IterateLevels()) {
+          qualities.Rows[$"Quality {i} pocket"].Values.Add(node.pocketObjValue);
+          qualities.Rows[$"Quality {i} current"].Values.Add(node.currentObjValue);
+          i++;
+        }
+        #endregion
+      }
+      void newBestSolutionCallback(ContinuedFraction best, double objVal) {
+        Results.AddOrUpdateResult("MSE (best)", new DoubleValue(objVal));
+        Results.AddOrUpdateResult("Solution", CreateSymbolicRegressionSolution(best, problemData, transformations));
+      }
+
       CFRAlgorithm(nVars, Depth, MutationRate, xy, out var bestObj, rand, NumGenerations, StagnationGenerations,
         Delta,
-        LocalSearchIterations, LocalSearchRestarts, LocalSearchTolerance, cancellationToken);
+        LocalSearchIterations, LocalSearchRestarts, LocalSearchTolerance, newBestSolutionCallback, iterationCallback, cancellationToken);
     }
 
     private void CFRAlgorithm(int nVars, int depth, double mutationRate, double[,] trainingData,
       out double bestObj,
       IRandom rand, int numGen, int stagnatingGens, double evalDelta,
       int localSearchIterations, int localSearchRestarts, double localSearchTolerance,
+      Action<ContinuedFraction, double> newBestSolutionCallback,
+      Action<Agent> iterationCallback,
       CancellationToken cancellationToken) {
       /* Algorithm 1 */
       /* Generate initial population by a randomized algorithm */
@@ -179,7 +239,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
 
         /* local search optimization of current solutions */
         foreach (var agent in pop_r.IterateLevels()) {
-          LocalSearchSimplex(localSearchIterations, localSearchRestarts, localSearchTolerance, evalDelta, agent, trainingData, rand);
+          LocalSearchSimplex(localSearchIterations, localSearchRestarts, localSearchTolerance, LocalSearchMinNumSamples, LocalSearchSamplesFraction, evalDelta, agent, trainingData, rand);
           Debug.Assert(agent.pocketObjValue < agent.currentObjValue);
         }
         foreach (var agent in pop_r.IteratePostOrder()) agent.MaintainInvariant(); // post-order to make sure that the root contains the best model 
@@ -202,32 +262,11 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
         /* keep track of the best solution */
         if (bestObj > pop.pocketObjValue) {
           bestObj = pop.pocketObjValue;
-          Results.AddOrUpdateResult("MSE (best)", new DoubleValue(bestObj));
-          Results.AddOrUpdateResult("Solution", CreateSymbolicRegressionSolution(pop.pocket, trainingData, Problem.ProblemData.AllowedInputVariables.ToArray(), Problem.ProblemData.TargetVariable));
+          newBestSolutionCallback(pop.pocket, bestObj);
         }
 
-        #region visualization and debugging
-        DataTable qualities;
-        int i = 0;
-        if (Results.TryGetValue("Qualities", out var qualitiesResult)) {
-          qualities = (DataTable)qualitiesResult.Value;
-        } else {
-          qualities = new DataTable("Qualities", "Qualities");
-          i = 0;
-          foreach (var node in pop.IterateLevels()) {
-            qualities.Rows.Add(new DataRow($"Quality {i} pocket", "Quality of pocket"));
-            qualities.Rows.Add(new DataRow($"Quality {i} current", "Quality of current"));
-            i++;
-          }
-          Results.AddOrUpdateResult("Qualities", qualities);
-        }
-        i = 0;
-        foreach (var node in pop.IterateLevels()) {
-          qualities.Rows[$"Quality {i} pocket"].Values.Add(node.pocketObjValue);
-          qualities.Rows[$"Quality {i} current"].Values.Add(node.currentObjValue);
-          i++;
-        }
-        #endregion
+
+        iterationCallback(pop);
       }
     }
 
@@ -263,15 +302,15 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       return pop;
     }
 
-    // Reset is not described in detail in the paper.
+    // Our criterion for relevance has been fairly strict: if no
+    // better model has been produced for five(5) straight generations,
+    // then the pocket of the root agent is removed and a new solution is created at random.
+
     // Statement by the authors: "We only replaced the pocket solution of the root with
     // a randomly generated solution. Then we execute the maintain-invariant process.
     // It does not initialize the solutions in the entire population."
     private void Reset(Agent root, int nVars, int depth, IRandom rand, double[,] trainingData) {
       root.pocket = new ContinuedFraction(nVars, depth, rand);
-      root.current = new ContinuedFraction(nVars, depth, rand);
-
-      root.currentObjValue = Evaluate(root.current, trainingData, Delta);
       root.pocketObjValue = Evaluate(root.pocket, trainingData, Delta);
 
       foreach (var agent in root.IteratePreOrder()) { agent.MaintainInvariant(); } // Here we use pre-order traversal push the newly created model down the hierarchy. 
@@ -347,7 +386,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       }
 
       a.current = ch;
-      LocalSearchSimplex(LocalSearchIterations, LocalSearchRestarts, LocalSearchTolerance, Delta, a, trainingData, rand);
+      LocalSearchSimplex(LocalSearchIterations, LocalSearchRestarts, LocalSearchTolerance, LocalSearchMinNumSamples, LocalSearchSamplesFraction, Delta, a, trainingData, rand);
       return ch;
     }
 
@@ -363,7 +402,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
           // Finally, the local search operation is executed on the mutated solution in order to optimize
           // non-zero coefficients. We do not apply mutation on pocket solutions because we consider them as a "collective memory"
           // of good models visited in the past. They influence the search process via recombination only.
-          LocalSearchSimplex(LocalSearchIterations, LocalSearchRestarts, LocalSearchTolerance, Delta, agent, trainingData, rand);
+          LocalSearchSimplex(LocalSearchIterations, LocalSearchRestarts, LocalSearchTolerance, LocalSearchMinNumSamples, LocalSearchSamplesFraction, Delta, agent, trainingData, rand);
         }
       }
       return pop;
@@ -482,12 +521,17 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
     }
 
 
-    private static void LocalSearchSimplex(int iterations, int restarts, double tolerance, double delta, Agent a, double[,] trainingData, IRandom rand) {
-      double uniformPeturbation = 1.0;
+    // The authors used the Nelder Mead solver from https://direct.mit.edu/evco/article/25/3/351/1046/Evolving-a-Nelder-Mead-Algorithm-for-Optimization
+    // Using different solvers (e.g. LevMar) is mentioned but not analysed
+
+
+    private static void LocalSearchSimplex(int iterations, int restarts, double tolerance, int minNumRows, double samplesFrac, double delta, Agent a, double[,] trainingData, IRandom rand) {
       int maxEvals = iterations;
       int numSearches = restarts + 1;
       var numRows = trainingData.GetLength(0);
-      int numSelectedRows = numRows / 5; // 20% of the training samples
+      int numSelectedRows = numRows;
+      if (numRows > minNumRows)
+        numSelectedRows = (int)(numRows * samplesFrac);
 
       var ch = a.current;
       var quality = Evaluate(ch, trainingData, delta); // get quality with original coefficients
@@ -498,7 +542,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       var bestQuality = quality;
       var bestCoeff = origCoeff;
 
-      var fittingData = SelectRandomRows(trainingData, numSelectedRows, rand);
+      double[,] fittingData = null;
 
       double objFunc(double[] curCoeff) {
         SetCoeff(ch, curCoeff);
@@ -506,10 +550,11 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       }
 
       for (int count = 0; count < numSearches; count++) {
+        fittingData = SelectRandomRows(trainingData, numSelectedRows, rand);
 
         SimplexConstant[] constants = new SimplexConstant[origCoeff.Length];
         for (int i = 0; i < origCoeff.Length; i++) {
-          constants[i] = new SimplexConstant(origCoeff[i], uniformPeturbation);
+          constants[i] = new SimplexConstant(origCoeff[i], initialPerturbation: 1.0);
         }
 
         RegressionResult result = NelderMeadSimplex.Regress(constants, tolerance, maxEvals, objFunc);
@@ -517,13 +562,14 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
         var optimizedCoeff = result.Constants;
         SetCoeff(ch, optimizedCoeff);
 
+        // the result with the best guiding function value (on the entire dataset) is chosen.
         var newQuality = Evaluate(ch, trainingData, delta);
 
         if (newQuality < bestQuality) {
           bestCoeff = optimizedCoeff;
           bestQuality = newQuality;
         }
-      } // reps
+      }
 
       SetCoeff(a.current, bestCoeff);
       a.currentObjValue = bestQuality;
@@ -584,7 +630,8 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
     Symbol constSy = new Constant();
     Symbol varSy = new Problems.DataAnalysis.Symbolic.Variable();
 
-    private ISymbolicRegressionSolution CreateSymbolicRegressionSolution(ContinuedFraction cfrac, double[,] trainingData, string[] variables, string targetVariable) {
+    private ISymbolicRegressionSolution CreateSymbolicRegressionSolution(ContinuedFraction cfrac, IRegressionProblemData problemData, List<ITransformation<double>> transformations) {
+      var variables = problemData.AllowedInputVariables.ToArray();
       ISymbolicExpressionTreeNode res = null;
       for (int i = cfrac.h.Length - 1; i > 1; i -= 2) {
         var hi = cfrac.h[i];
@@ -610,10 +657,12 @@ namespace HeuristicLab.Algorithms.DataAnalysis.ContinuedFractionRegression {
       progRoot.AddSubtree(start);
       start.AddSubtree(h0Term);
 
-      var model = new SymbolicRegressionModel(targetVariable, new SymbolicExpressionTree(progRoot), new SymbolicDataAnalysisExpressionTreeBatchInterpreter());
-      var ds = new Dataset(variables.Concat(new[] { targetVariable }), trainingData);
-      var problemData = new RegressionProblemData(ds, variables, targetVariable);
-      var sol = new SymbolicRegressionSolution(model, problemData);
+      ISymbolicRegressionModel model = new SymbolicRegressionModel(problemData.TargetVariable, new SymbolicExpressionTree(progRoot), new SymbolicDataAnalysisExpressionTreeBatchInterpreter());
+      if (transformations != null && transformations.Any()) {
+        var backscaling = new SymbolicExpressionTreeBacktransformator(new TransformationToSymbolicTreeMapper());
+        model = (ISymbolicRegressionModel)backscaling.Backtransform(model, transformations, problemData.TargetVariable);
+      }
+      var sol = new SymbolicRegressionSolution(model, (IRegressionProblemData)problemData.Clone());
       return sol;
     }
 
