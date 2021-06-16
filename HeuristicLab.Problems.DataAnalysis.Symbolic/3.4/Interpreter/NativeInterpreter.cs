@@ -30,6 +30,7 @@ using HeuristicLab.Common;
 using HeuristicLab.Core;
 using HeuristicLab.Data;
 using HeuristicLab.Encodings.SymbolicExpressionTreeEncoding;
+using HeuristicLab.NativeInterpreter;
 using HeuristicLab.Parameters;
 using HeuristicLab.Problems.DataAnalysis;
 
@@ -172,7 +173,7 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic {
       var options = new SolverOptions { /* not using any options here */ };
 
       var summary = new OptimizationSummary(); // also not used
-      NativeWrapper.GetValues(code, rows, result, null, options, ref summary);
+      NativeWrapper.GetValues(code, rows, options, result, target: null, out summary);
 
       // when evaluation took place without any error, we can increment the counter
       lock (syncRoot) {

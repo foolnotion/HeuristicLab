@@ -1,22 +1,39 @@
 ﻿using System;
-using System.IO;
-using System.IO.Compression;
 using System.Runtime.InteropServices;
 
-namespace HeuristicLab.Problems.DataAnalysis.Symbolic {
+namespace HeuristicLab.NativeInterpreter {
   [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
   public struct NativeInstruction {
     public byte OpCode;
     public ushort Arity;
     public ushort Length;
-    public double Value;
-    public IntPtr Data;
-    public bool Optimize;
+    public double Value; // weights for variables, values for parameters
+    public IntPtr Data; // used for variables only
+    public bool Optimize; // used for parameters only
   }
 
-  // proxy structure to pass information from Ceres back to the caller
+  public enum Algorithm : int {
+    Krogh = 0,
+    RuheWedin1 = 1,
+    RuheWedin2 = 2,
+    RuheWedin3 = 3
+  }
+
   [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
-  public struct OptimizationSummary {
+  public class SolverOptions {
+    public int Iterations = 10;
+    public int UseNonmonotonicSteps = 0; // = false
+    public CeresTypes.MinimizerType Minimizer = CeresTypes.MinimizerType.TRUST_REGION;
+    public CeresTypes.LinearSolverType LinearSolver = CeresTypes.LinearSolverType.DENSE_QR;
+    public CeresTypes.TrustRegionStrategyType TrustRegionStrategy = CeresTypes.TrustRegionStrategyType.LEVENBERG_MARQUARDT;
+    public CeresTypes.DoglegType Dogleg = CeresTypes.DoglegType.TRADITIONAL_DOGLEG;
+    public CeresTypes.LineSearchDirectionType LineSearchDirection = CeresTypes.LineSearchDirectionType.LBFGS;
+    public Algorithm Algorithm = Algorithm.Krogh;
+  }
+
+  // proxy structure to pass information from ceres back to the caller
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+  public class OptimizationSummary {
     public double InitialCost; // value of the objective function before the optimization
     public double FinalCost; // value of the objective function after the optimization
     public int SuccessfulSteps; // number of minimizer iterations in which the step was accepted
@@ -24,103 +41,54 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic {
     public int InnerIterationSteps; // number of times inner iterations were performed
     public int ResidualEvaluations; // number of residual only evaluations
     public int JacobianEvaluations; // number of Jacobian (and residual) evaluations
-  };
-
-  public enum MinimizerType : int {
-    LINE_SEARCH = 0,
-    TRUST_REGION = 1
   }
-
-  public enum LinearSolverType : int {
-    DENSE_NORMAL_CHOLESKY = 0,
-    DENSE_QR = 1,
-    SPARSE_NORMAL_CHOLESKY = 2,
-    DENSE_SCHUR = 3,
-    SPARSE_SCHUR = 4,
-    ITERATIVE_SCHUR = 5,
-    CGNR = 6
-  }
-
-  public enum TrustRegionStrategyType : int {
-    LEVENBERG_MARQUARDT = 0,
-    DOGLEG = 1
-  }
-
-  public enum DoglegType : int {
-    TRADITIONAL_DOGLEG = 0,
-    SUBSPACE_DOGLEG = 1
-  }
-
-  public enum LineSearchDirectionType : int {
-    STEEPEST_DESCENT = 0,
-    NONLINEAR_CONJUGATE_GRADIENT = 1,
-    LBFGS = 2,
-    BFSG = 3
-  }
-
-  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
-  public struct SolverOptions {
-    public int Iterations;
-    public int UseNonmonotonicSteps;
-    public int Minimizer; // type of minimizer (trust region or line search)
-    public int LinearSolver; // type of linear solver
-    public int TrustRegionStrategy; // levenberg-marquardt or dogleg
-    public int Dogleg; // type of dogleg (traditional or subspace)
-    public int LineSearchDirection; // line search direction type (BFGS, LBFGS, etc)
-    public int Algorithm;
-  };
 
   public static class NativeWrapper {
-    private const string x86zip = "hl-native-interpreter-x86.zip";
-    private const string x64zip = "hl-native-interpreter-x64.zip";
-
-    private const string x86dll = "hl-native-interpreter-x86.dll";
     private const string x64dll = "hl-native-interpreter-x64.dll";
-
     private readonly static bool is64;
 
     static NativeWrapper() {
       is64 = Environment.Is64BitProcess;
-
-      //using (var zip = new FileStream(is64 ? x64zip : x86zip, FileMode.Open)) {
-      //  using (var archive = new ZipArchive(zip, ZipArchiveMode.Read)) {
-      //    foreach (var entry in archive.Entries) {
-      //      if (File.Exists(entry.Name)) {
-      //        File.Delete(entry.Name);
-      //      }
-      //    }
-      //    ZipFileExtensions.ExtractToDirectory(archive, Environment.CurrentDirectory);
-      //  }
-      //}
     }
 
-    public static void GetValues(NativeInstruction[] code, int[] rows, double[] result, double[] target, SolverOptions options, ref OptimizationSummary summary) {
+    public static void GetValues(NativeInstruction[] code, int[] rows, SolverOptions options, double[] result, double[] target, out OptimizationSummary optSummary) {
+      optSummary = new OptimizationSummary();
       if (is64)
-        GetValues64(code, code.Length, rows, rows.Length, options, result, target, ref summary);
+        GetValues64(code, code.Length, rows, rows.Length, options, result, target, optSummary);
       else
-        GetValues32(code, code.Length, rows, rows.Length, options, result, target, ref summary);
+        throw new NotSupportedException("Native interpreter is only available on x64 builds");
     }
-
-    public static void GetValuesVarPro(NativeInstruction[] code, int[] termIndices, int[] rows, double[] coefficients,
-      double[] result, double[] target, SolverOptions options, ref OptimizationSummary summary) {
+    public static void GetValuesVarPro(NativeInstruction[] code, int[] termIndices, int[] rows, double[] coefficients, SolverOptions options, double[] result, double[] target, out OptimizationSummary optSummary) {
+      optSummary = new OptimizationSummary();
       if (is64)
-        GetValuesVarPro64(code, code.Length, termIndices, termIndices.Length, rows, rows.Length, coefficients, options, result, target, ref summary);
+        GetValuesVarPro64(code, code.Length, termIndices, termIndices.Length, rows, rows.Length, coefficients, options, result, target, optSummary);
       else
-        GetValuesVarPro32(code, code.Length, termIndices, termIndices.Length, rows, rows.Length, coefficients, options, result, target, ref summary);
+        throw new NotSupportedException("Native interpreter is only available on x64 builds");
     }
 
-    // x86
-    [DllImport(x86dll, EntryPoint = "GetValues", CallingConvention = CallingConvention.Cdecl)]
-    internal static extern void GetValues32([In, Out] NativeInstruction[] code, int len, int[] rows, int nRows, SolverOptions options, [In, Out] double[] result, double[] target, ref OptimizationSummary summary);
-
-    // x64
     [DllImport(x64dll, EntryPoint = "GetValues", CallingConvention = CallingConvention.Cdecl)]
-    internal static extern void GetValues64([In, Out] NativeInstruction[] code, int len, int[] rows, int nRows, SolverOptions options, [In, Out] double[] result, double[] target, ref OptimizationSummary summary);
-
-    [DllImport(x86dll, EntryPoint = "GetValuesVarPro", CallingConvention = CallingConvention.Cdecl)]
-    internal static extern void GetValuesVarPro32([In, Out] NativeInstruction[] code, int len, int[] termIndices, int nTerms, int[] rows, int nRows, [In, Out] double[] coefficients, SolverOptions options, [In, Out] double[] result, double[] target, ref OptimizationSummary summary);
+    internal static extern void GetValues64(
+      [In,Out] NativeInstruction[] code, // parameters are optimized by callee
+      [In] int len,
+      [In] int[] rows,
+      [In] int nRows,
+      [In] SolverOptions options,
+      [Out] double[] result,
+      [In] double[] target,
+      [Out] OptimizationSummary optSummary);
 
     [DllImport(x64dll, EntryPoint = "GetValuesVarPro", CallingConvention = CallingConvention.Cdecl)]
-    internal static extern void GetValuesVarPro64([In, Out] NativeInstruction[] code, int len, int[] termIndices, int nTerms, int[] rows, int nRows, [In, Out] double[] coefficients, SolverOptions options, [In, Out] double[] result, double[] target, ref OptimizationSummary summary);
+    internal static extern void GetValuesVarPro64(
+      [In,Out] NativeInstruction[] code,  // the values fields for non-linear parameters are changed by the callee
+      int len,
+      int[] termIndices,
+      int nTerms,
+      int[] rows,
+      int nRows,
+      [In,Out] double[] coefficients,
+      [In] SolverOptions options,
+      [In, Out] double[] result,
+      [In] double[] target,
+      [In,Out] OptimizationSummary optSummary);
   }
 }

@@ -19,24 +19,19 @@
  */
 #endregion
 
-using System;
-using System.IO;
-
 using HeuristicLab.PluginInfrastructure;
 
 namespace HeuristicLab.Problems.DataAnalysis.Symbolic {
-  [Plugin("HeuristicLab.NativeInterpreter", "Provides a native (C++) interpreter for symbolic expression trees", "0.0.0.1")]
+  [Plugin("HeuristicLab.NativeInterpreter", "Provides a native (C++) interpreter for symbolic expression trees", "0.1.0.0")]
   [PluginFile("HeuristicLab.Problems.DataAnalysis.Symbolic.NativeInterpreter-0.1.dll", PluginFileType.Assembly)]
+  // [PluginFile("hl-native-interpreter-msvc-x86.dll", PluginFileType.NativeDll)]
+  // [PluginFile("hl-native-interpreter-msvc-x64.dll", PluginFileType.NativeDll)]
+  [PluginFile("hl-native-interpreter-x64.dll", PluginFileType.NativeDll)]
+  [PluginFile("libceres.dll", PluginFileType.NativeDll)]
+  [PluginFile("libgcc_s_seh-1.dll", PluginFileType.NativeDll)]
+  [PluginFile("libopenlibm.dll", PluginFileType.NativeDll)]
+  [PluginFile("libstdc++-6.dll", PluginFileType.NativeDll)]
+  [PluginFile("libwinpthread-1.dll", PluginFileType.NativeDll)]
   public class HeuristicLabNativeInterpreterPlugin : PluginBase {
-    public override void OnLoad() {
-      base.OnLoad();
-      // add path for native dlls to PATH env variable
-
-      var is64 = Environment.Is64BitProcess;
-      string nativeDllPath = Path.Combine(Environment.CurrentDirectory, is64 ? "x64" : "x86");
-      var envPath = Environment.GetEnvironmentVariable("PATH");
-      if (!envPath.Contains(nativeDllPath))
-        Environment.SetEnvironmentVariable("PATH", envPath + ";" + nativeDllPath);
-    }
   }
 }

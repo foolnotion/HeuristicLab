@@ -27,6 +27,7 @@ using HeuristicLab.Common;
 using HeuristicLab.Core;
 using HeuristicLab.Data;
 using HeuristicLab.Encodings.SymbolicExpressionTreeEncoding;
+using HeuristicLab.NativeInterpreter;
 using HeuristicLab.Parameters;
 using HEAL.Attic;
 
@@ -69,26 +70,26 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic {
       var root = tree.Root.GetSubtree(0).GetSubtree(0);
       var code = new NativeInstruction[root.GetLength()];
       if (root.SubtreeCount > ushort.MaxValue) throw new ArgumentException("Number of subtrees is too big (>65.535)");
-      code[0] = new NativeInstruction { narg = (ushort)root.SubtreeCount, opcode = opCodeMapper(root) };
-      int c = 1, i = 0;
-      foreach (var node in root.IterateNodesBreadth()) {
-        for (int j = 0; j < node.SubtreeCount; ++j) {
-          var s = node.GetSubtree(j);
-          if (s.SubtreeCount > ushort.MaxValue) throw new ArgumentException("Number of subtrees is too big (>65.535)");
-          code[c + j] = new NativeInstruction { narg = (ushort)s.SubtreeCount, opcode = opCodeMapper(s) };
+      int i = code.Length - 1;
+      foreach (var n in root.IterateNodesPrefix()) {
+        code[i] = new NativeInstruction { Arity = (ushort)n.SubtreeCount, OpCode = opCodeMapper(n), Length = 1, Optimize = false };
+        if (n is VariableTreeNode variable) {
+          code[i].Value = variable.Weight;
+          code[i].Data = cachedData[variable.VariableName].AddrOfPinnedObject();
+        } else if (n is ConstantTreeNode constant) {
+          code[i].Value = constant.Value;
         }
-
-        if (node is VariableTreeNode variable) {
-          code[i].weight = variable.Weight;
-          code[i].data = cachedData[variable.VariableName].AddrOfPinnedObject();
-        } else if (node is ConstantTreeNode constant) {
-          code[i].value = constant.Value;
-        }
-
-        code[i].childIndex = c;
-        c += node.SubtreeCount;
-        ++i;
+        --i;
       }
+      // second pass to calculate lengths
+      for (i = 0; i < code.Length; i++) {
+        var c = i - 1;
+        for (int j = 0; j < code[i].Arity; ++j) {
+          code[i].Length += code[c].Length;
+          c -= code[c].Length;
+        }
+      }
+
       return code;
     }
 
@@ -113,8 +114,8 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic {
       (byte)OpCode.Cos,
       (byte)OpCode.Tan,
       (byte)OpCode.Tanh,
-      (byte)OpCode.Power,
-      (byte)OpCode.Root,
+      // (byte)OpCode.Power,
+      // (byte)OpCode.Root,
       (byte)OpCode.SquareRoot,
       (byte)OpCode.Square,
       (byte)OpCode.CubeRoot,
@@ -130,7 +131,7 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic {
         InitCache(dataset);
       }
 
-      byte mapSupportedSymbols(ISymbolicExpressionTreeNode node) {        
+      byte mapSupportedSymbols(ISymbolicExpressionTreeNode node) {
         var opCode = OpCodes.MapSymbolToOpCode(node);
         if (supportedOpCodes.Contains(opCode)) return opCode;
         else throw new NotSupportedException($"The native interpreter does not support {node.Symbol.Name}");
@@ -139,8 +140,11 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic {
 
       var rowsArray = rows.ToArray();
       var result = new double[rowsArray.Length];
-
-      NativeWrapper.GetValuesVectorized(code, code.Length, rowsArray, rowsArray.Length, result);
+      // prevent optimization of parameters
+      var options = new SolverOptions {
+        Iterations = 0
+      };
+      NativeWrapper.GetValues(code, rowsArray, options, result, target: null, optSummary: out var optSummary); // target is only used when optimizing parameters
 
       // when evaluation took place without any error, we can increment the counter
       lock (syncRoot) {

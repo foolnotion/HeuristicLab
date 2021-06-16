@@ -6,6 +6,7 @@ using HeuristicLab.Common;
 using HeuristicLab.Core;
 using HeuristicLab.Data;
 using HeuristicLab.Encodings.SymbolicExpressionTreeEncoding;
+using HeuristicLab.NativeInterpreter;
 using HeuristicLab.Parameters;
 
 namespace HeuristicLab.Problems.DataAnalysis.Symbolic {
@@ -83,20 +84,20 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic {
       get { return UseNonmonotonicStepsParameter.Value.Value; }
       set { UseNonmonotonicStepsParameter.Value.Value = value; }
     }
-    private int Minimizer {
-      get { return Array.IndexOf(MinimizerType, MinimizerTypeParameter.Value.Value); }
+    private CeresTypes.MinimizerType Minimizer {
+      get { return (CeresTypes.MinimizerType)Enum.Parse(typeof(CeresTypes.MinimizerType), MinimizerTypeParameter.Value.Value); }
     }
-    private int LinearSolver {
-      get { return Array.IndexOf(LinerSolverType, LinearSolverTypeParameter.Value.Value); }
+    private CeresTypes.LinearSolverType LinearSolver {
+      get { return (CeresTypes.LinearSolverType)Enum.Parse(typeof(CeresTypes.LinearSolverType), LinearSolverTypeParameter.Value.Value); }
     }
-    private int TrustRegionStrategy {
-      get { return Array.IndexOf(TrustRegionStrategyType, TrustRegionStrategyTypeParameter.Value.Value); }
+    private CeresTypes.TrustRegionStrategyType TrustRegionStrategy {
+      get { return (CeresTypes.TrustRegionStrategyType)Enum.Parse(typeof(CeresTypes.TrustRegionStrategyType), TrustRegionStrategyTypeParameter.Value.Value); }
     }
-    private int Dogleg {
-      get { return Array.IndexOf(DoglegType, DogLegTypeParameter.Value.Value); }
+    private CeresTypes.DoglegType Dogleg {
+      get { return (CeresTypes.DoglegType)Enum.Parse(typeof(CeresTypes.DoglegType), DogLegTypeParameter.Value.Value); }
     }
-    private int LineSearchDirection {
-      get { return Array.IndexOf(LinearSearchDirectionType, LineSearchDirectionTypeParameter.Value.Value); }
+    private CeresTypes.LineSearchDirectionType LineSearchDirection {
+      get { return (CeresTypes.LineSearchDirectionType)Enum.Parse(typeof(CeresTypes.LineSearchDirectionType), LineSearchDirectionTypeParameter.Value.Value); }
     }
     #endregion
 
@@ -146,7 +147,7 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic {
         var rowsArray = rows.ToArray();
         var result = new double[rowsArray.Length];
 
-        NativeWrapper.GetValues(code, rowsArray, result, target, options, ref summary);
+        NativeWrapper.GetValues(code, rowsArray, options, result, target, out summary);
       }
       return Enumerable.Range(0, code.Length).Where(i => nodes[i] is SymbolicExpressionTreeTerminalNode).ToDictionary(i => nodes[i], i => code[i].Value);
     }
@@ -200,7 +201,7 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic {
       var result = new double[rowsArray.Length];
       var codeArray = totalCode.ToArray();
 
-      NativeWrapper.GetValuesVarPro(codeArray, termIndices, rowsArray, coeff, result, target, options, ref summary);
+      NativeWrapper.GetValuesVarPro(codeArray, termIndices,rowsArray, coeff, options, result, target, out summary);
       return Enumerable.Range(0, totalCodeSize).Where(i => codeArray[i].Optimize).ToDictionary(i => totalNodes[i], i => codeArray[i].Value);
     }
   }
