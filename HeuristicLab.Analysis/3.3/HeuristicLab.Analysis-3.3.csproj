@@ -172,6 +172,7 @@
     <Compile Include="Statistics\EnumerableStatisticsExtension.cs" />
     <Compile Include="Statistics\Fitting\ExpFitting.cs" />
     <Compile Include="Statistics\Fitting\IFitting.cs" />
+    <Compile Include="Statistics\Fitting\Statistics.cs" />
     <Compile Include="Statistics\KruskalWallisTest.cs" />
     <Compile Include="Statistics\Fitting\LinearLeastSquaresFitting.cs" />
     <Compile Include="Statistics\Fitting\LogFitting.cs" />

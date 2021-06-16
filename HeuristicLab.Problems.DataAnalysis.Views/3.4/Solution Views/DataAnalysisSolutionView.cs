@@ -73,7 +73,7 @@ namespace HeuristicLab.Problems.DataAnalysis.Views {
       base.OnContentChanged();
       AddEvaluationViewTypes();
 
-      //recover selection
+      // recover selection
       if (selectedName != null) {
         foreach (ListViewItem item in itemsListView.Items) {
           if (item.Tag != null && item.Tag is Type && item.Text == selectedName)

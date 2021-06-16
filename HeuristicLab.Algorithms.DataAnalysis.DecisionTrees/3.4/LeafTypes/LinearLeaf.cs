@@ -49,7 +49,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis {
       if (pd.Dataset.Rows < MinLeafSize(pd)) throw new ArgumentException("The number of training instances is too small to create a linear model");
       double rmse, cvRmse;
       numberOfParameters = pd.AllowedInputVariables.Count() + 1;
-      var res = LinearRegression.CreateSolution(pd, out rmse, out cvRmse);
+      var res = LinearRegression.CreateSolution(pd, out rmse, out cvRmse, out _);
       return res.Model;
     }
 

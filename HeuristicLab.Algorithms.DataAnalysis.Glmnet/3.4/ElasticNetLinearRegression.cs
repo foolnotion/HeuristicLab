@@ -33,6 +33,7 @@ using HEAL.Attic;
 using HeuristicLab.Problems.DataAnalysis;
 using HeuristicLab.Problems.DataAnalysis.Symbolic;
 using HeuristicLab.Problems.DataAnalysis.Symbolic.Regression;
+using HeuristicLab.Analysis.Statistics;
 
 namespace HeuristicLab.Algorithms.DataAnalysis.Glmnet {
   [Item("Elastic-net Linear Regression (LR)", "Linear regression with elastic-net regularization (wrapper for glmnet)")]
@@ -87,7 +88,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.Glmnet {
       }
     }
 
-  private void CreateSolution(double lambda) {
+    private void CreateSolution(double lambda) {
       double trainNMSE;
       double testNMSE;
       var coeff = CalculateModelCoefficients(Problem.ProblemData, Penality, lambda, out trainNMSE, out testNMSE);
@@ -96,6 +97,17 @@ namespace HeuristicLab.Algorithms.DataAnalysis.Glmnet {
 
       var solution = CreateSymbolicSolution(coeff, Problem.ProblemData);
       Results.Add(new Result(solution.Name, solution.Description, solution));
+
+      var xy = Problem.ProblemData.Dataset.ToArray(Problem.ProblemData.AllowedInputVariables.Concat(new[] { Problem.ProblemData.TargetVariable }), Problem.ProblemData.TrainingIndices);
+      // prepare xy for calculation of parameter statistics
+      // the last coefficient is the offset
+      var resid = new double[xy.GetLength(0)];
+      for (int r = 0; r < xy.GetLength(0); r++) {
+        resid[r] = xy[r, coeff.Length - 1] - coeff[coeff.Length - 1];
+        xy[r, coeff.Length - 1] = 1.0;
+      }
+      var statistics = Statistics.CalculateParameterStatistics(xy, coeff, resid);
+      Results.AddOrUpdateResult("Statistics", statistics.AsResultCollection(Problem.ProblemData.AllowedInputVariables.Concat(new string[] { "<const>" })));
     }
 
     public static IRegressionSolution CreateSymbolicSolution(double[] coeff, IRegressionProblemData problemData) {

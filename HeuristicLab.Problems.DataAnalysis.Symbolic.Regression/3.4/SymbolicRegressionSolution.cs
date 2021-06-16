@@ -19,6 +19,7 @@
  */
 #endregion
 
+using System.Collections.Generic;
 using System.Linq;
 using HEAL.Attic;
 using HeuristicLab.Common;
@@ -111,7 +112,7 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.Regression {
       }
     }
 
-
+    IConfidenceRegressionModel IConfidenceRegressionSolution.Model => Model;
 
     [StorableConstructor]
     private SymbolicRegressionSolution(StorableConstructorFlag _) : base(_) { }
@@ -213,6 +214,17 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.Regression {
       }
 
       return intervalEvaluation;
+    }
+
+    public IEnumerable<double> EstimatedVariances => GetEstimatedVariances(ProblemData.AllIndices);
+
+    public IEnumerable<double> EstimatedTrainingVariances => GetEstimatedVariances(ProblemData.TestIndices);
+
+    public IEnumerable<double> EstimatedTestVariances => GetEstimatedVariances(ProblemData.TestIndices);
+
+
+    public IEnumerable<double> GetEstimatedVariances(IEnumerable<int> rows) {
+      return Model.GetEstimatedVariances(ProblemData.Dataset, rows);
     }
   }
 }

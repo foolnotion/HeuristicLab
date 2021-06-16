@@ -23,7 +23,7 @@ using HEAL.Attic;
 
 namespace HeuristicLab.Problems.DataAnalysis.Symbolic.Regression {
   [StorableType("a411e2b5-f926-41a6-b55b-1aef862db2fb")]
-  public interface ISymbolicRegressionModel : IRegressionModel, ISymbolicDataAnalysisModel {
+  public interface ISymbolicRegressionModel : IRegressionModel, ISymbolicDataAnalysisModel, IConfidenceRegressionModel {
     void Scale(IRegressionProblemData problemData);
   }
 }

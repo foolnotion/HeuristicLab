@@ -31,6 +31,8 @@ using HEAL.Attic;
 using HeuristicLab.Problems.DataAnalysis;
 using HeuristicLab.Problems.DataAnalysis.Symbolic;
 using HeuristicLab.Problems.DataAnalysis.Symbolic.Regression;
+using HeuristicLab.Analysis;
+using HeuristicLab.Analysis.Statistics;
 
 namespace HeuristicLab.Algorithms.DataAnalysis {
   /// <summary>
@@ -65,31 +67,32 @@ namespace HeuristicLab.Algorithms.DataAnalysis {
       // produce both solutions, to allow symbolic manipulation of LR solutions as well
       // as the calculation of prediction intervals.
       // There is no clean way to implement the new model class for LR as a symbolic model.
-      var solution = CreateSolution(Problem.ProblemData, out rmsError, out cvRmsError);
+      var solution = CreateSolution(Problem.ProblemData, out rmsError, out cvRmsError, out _);
 #pragma warning disable 168, 3021
-      var symbolicSolution = CreateLinearRegressionSolution(Problem.ProblemData, out rmsError, out cvRmsError);
+      var symbolicSolution = CreateLinearRegressionSolution(Problem.ProblemData, out rmsError, out cvRmsError, out var statistics);
 #pragma warning restore 168, 3021
       Results.Add(new Result(SolutionResultName, "The linear regression solution.", symbolicSolution));
       Results.Add(new Result(ConfidenceSolutionResultName, "Linear regression solution with parameter covariance matrix " +
                                                            "and calculation of prediction intervals", solution));
       Results.Add(new Result("Root mean square error", "The root of the mean of squared errors of the linear regression solution on the training set.", new DoubleValue(rmsError)));
       Results.Add(new Result("Estimated root mean square error (cross-validation)", "The estimated root of the mean of squared errors of the linear regression solution via cross validation.", new DoubleValue(cvRmsError)));
+
+      var predictorNames = Problem.ProblemData.AllowedInputVariables.Concat(new string[] { "<const>" }).ToArray();
+      Results.AddOrUpdateResult("Statistics", statistics.AsResultCollection(predictorNames));
+
     }
 
     [Obsolete("Use CreateSolution() instead")]
-    public static ISymbolicRegressionSolution CreateLinearRegressionSolution(IRegressionProblemData problemData, out double rmsError, out double cvRmsError) {
+    public static ISymbolicRegressionSolution CreateLinearRegressionSolution(IRegressionProblemData problemData, out double rmsError, out double cvRmsError, out Statistics statistics) {
       IEnumerable<string> doubleVariables;
       IEnumerable<KeyValuePair<string, IEnumerable<string>>> factorVariables;
       double[,] inputMatrix;
       PrepareData(problemData, out inputMatrix, out doubleVariables, out factorVariables);
 
-      alglib.linearmodel lm = new alglib.linearmodel();
-      alglib.lrreport ar = new alglib.lrreport();
       int nRows = inputMatrix.GetLength(0);
       int nFeatures = inputMatrix.GetLength(1) - 1;
 
-      int retVal = 1;
-      alglib.lrbuild(inputMatrix, nRows, nFeatures, out retVal, out lm, out ar);
+      alglib.lrbuild(inputMatrix, nRows, nFeatures, out int retVal, out var lm, out var ar);
       if (retVal != 1) throw new ArgumentException("Error in calculation of linear regression solution");
       rmsError = ar.rmserror;
       cvRmsError = ar.cvrmserror;
@@ -97,43 +100,57 @@ namespace HeuristicLab.Algorithms.DataAnalysis {
       double[] coefficients = new double[nFeatures + 1]; // last coefficient is for the constant
       alglib.lrunpack(lm, out coefficients, out nFeatures);
 
+      // prepare inputmatrix (which has y as last column) for calculation of parameter statistics
+      // the last coefficient is the offset
+      var resid = new double[nRows];
+      for (int r = 0; r < nRows; r++) {
+        resid[r] = inputMatrix[r, nFeatures] - coefficients[nFeatures];
+        inputMatrix[r, nFeatures] = 1.0;
+      }
+      statistics = Statistics.CalculateParameterStatistics(inputMatrix, coefficients, resid);
+
       int nFactorCoeff = factorVariables.Sum(kvp => kvp.Value.Count());
       int nVarCoeff = doubleVariables.Count();
       var tree = LinearModelToTreeConverter.CreateTree(factorVariables, coefficients.Take(nFactorCoeff).ToArray(),
         doubleVariables.ToArray(), coefficients.Skip(nFactorCoeff).Take(nVarCoeff).ToArray(),
         @const: coefficients[nFeatures]);
 
-      SymbolicRegressionSolution solution = new SymbolicRegressionSolution(new SymbolicRegressionModel(problemData.TargetVariable, tree, new SymbolicDataAnalysisExpressionTreeLinearInterpreter()), (IRegressionProblemData)problemData.Clone());
+      SymbolicRegressionSolution solution = new SymbolicRegressionSolution(
+        new SymbolicRegressionModel(problemData.TargetVariable, tree, new SymbolicDataAnalysisExpressionTreeLinearInterpreter(), parameterCovariance: statistics.CovMx), 
+        (IRegressionProblemData)problemData.Clone());
       solution.Model.Name = "Linear Regression Model";
       solution.Name = "Linear Regression Solution";
       return solution;
     }
 
-    public static IRegressionSolution CreateSolution(IRegressionProblemData problemData, out double rmsError, out double cvRmsError) {
+    public static IRegressionSolution CreateSolution(IRegressionProblemData problemData, out double rmsError, out double cvRmsError, out Statistics statistics) {
       IEnumerable<string> doubleVariables;
       IEnumerable<KeyValuePair<string, IEnumerable<string>>> factorVariables;
       double[,] inputMatrix;
       PrepareData(problemData, out inputMatrix, out doubleVariables, out factorVariables);
 
-      alglib.linearmodel lm = new alglib.linearmodel();
-      alglib.lrreport ar = new alglib.lrreport();
       int nRows = inputMatrix.GetLength(0);
       int nFeatures = inputMatrix.GetLength(1) - 1;
 
-      int retVal = 1;
-      alglib.lrbuild(inputMatrix, nRows, nFeatures, out retVal, out lm, out ar);
+      alglib.lrbuild(inputMatrix, nRows, nFeatures, out int retVal, out var lm, out var ar);
       if (retVal != 1) throw new ArgumentException("Error in calculation of linear regression solution");
       rmsError = ar.rmserror;
       cvRmsError = ar.cvrmserror;
 
       // get parameters of the model
       double[] w;
-      int nVars;
-      alglib.lrunpack(lm, out w, out nVars);
+      alglib.lrunpack(lm, out w, out _);
+
+      // prepare inputmatrix (which has y as last column) for calculation of parameter statistics
+      // the last coefficient is the offset
+      var resid = new double[nRows];
+      for (int r = 0; r < nRows; r++) {
+        resid[r] = inputMatrix[r, nFeatures] - w[nFeatures];
+        inputMatrix[r, nFeatures] = 1.0;
+      }
+      statistics = Statistics.CalculateParameterStatistics(inputMatrix, w, resid);
 
       // ar.c is the covariation matrix,  array[0..NVars,0..NVars].
-      // C[i, j] = Cov(A[i], A[j])
-
       var solution = new LinearRegressionModel(w, ar.c, cvRmsError, problemData.TargetVariable, doubleVariables, factorVariables)
         .CreateRegressionSolution((IRegressionProblemData)problemData.Clone());
       solution.Name = "Linear Regression Solution";

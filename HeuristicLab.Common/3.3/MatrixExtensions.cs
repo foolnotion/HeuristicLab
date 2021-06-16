@@ -95,5 +95,32 @@ namespace HeuristicLab.Common {
           result[i, j + aLen] = b[i, j];
       return result;
     }
+
+    /// <summary>
+    /// Concatenates matrices horizontally.
+    /// A      B
+    /// 1 2    9 8
+    /// 3 4    7 6
+    /// 
+    /// HorzCat(A, B)
+    /// 1 2 9 8
+    /// 3 4 7 6
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <param name="a"></param>
+    /// <param name="b"></param>
+    /// <returns>A new matrix with the number of columns = a.GetLength(1) + b.GetLength(1)</returns>
+    public static T[,] HorzCat<T>(this T[,] a, T[] b) {
+      Contract.Assert(a.GetLength(0) == b.Length);
+      var aLen = a.GetLength(1);
+      var bLen = 1;
+      var result = new T[a.GetLength(0), aLen + bLen];
+      for (int i = 0; i < a.GetLength(0); i++)
+        for (int j = 0; j < aLen; j++)
+          result[i, j] = a[i, j];
+      for (int i = 0; i < a.GetLength(0); i++)
+        result[i, aLen] = b[i];
+      return result;
+    }
   }
 }
