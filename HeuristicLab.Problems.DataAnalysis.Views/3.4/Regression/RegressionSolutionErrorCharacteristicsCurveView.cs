@@ -28,6 +28,7 @@ using HeuristicLab.Algorithms.DataAnalysis;
 using HeuristicLab.Common;
 using HeuristicLab.MainForm;
 using HeuristicLab.Optimization;
+using HeuristicLab.PluginInfrastructure;
 
 namespace HeuristicLab.Problems.DataAnalysis.Views {
   [View("Error Characteristics Curve")]
@@ -73,7 +74,7 @@ namespace HeuristicLab.Problems.DataAnalysis.Views {
       set { base.Content = value; }
     }
 
-    private readonly IList<IRegressionSolution> solutions = new List<IRegressionSolution>();
+    private readonly List<IRegressionSolution> solutions = new List<IRegressionSolution>();
     public IEnumerable<IRegressionSolution> Solutions {
       get { return solutions.AsEnumerable(); }
     }
@@ -102,10 +103,7 @@ namespace HeuristicLab.Problems.DataAnalysis.Views {
         // recalculate baseline solutions (for symbolic regression models the features used in the model might have changed)
         solutions.Clear(); // remove all
         solutions.Add(Content); // re-add the first solution
-        // and recalculate all other solutions
-        foreach (var sol in CreateBaselineSolutions()) {
-          solutions.Add(sol);
-        }
+        solutions.AddRange(CreateBaselineSolutions());
         UpdateChart();
       }
     }
@@ -115,10 +113,7 @@ namespace HeuristicLab.Problems.DataAnalysis.Views {
         // recalculate baseline solutions
         solutions.Clear(); // remove all
         solutions.Add(Content); // re-add the first solution
-        // and recalculate all other solutions
-        foreach (var sol in CreateBaselineSolutions()) {
-          solutions.Add(sol);
-        }
+        solutions.AddRange(CreateBaselineSolutions());
         UpdateChart();
       }
     }
@@ -248,9 +243,11 @@ namespace HeuristicLab.Problems.DataAnalysis.Views {
 
     protected virtual List<double> GetResiduals(IEnumerable<double> originalValues, IEnumerable<double> estimatedValues) {
       switch (residualComboBox.SelectedItem.ToString()) {
-        case "Absolute error": return originalValues.Zip(estimatedValues, (x, y) => Math.Abs(x - y))
+        case "Absolute error":
+          return originalValues.Zip(estimatedValues, (x, y) => Math.Abs(x - y))
             .Where(r => !double.IsNaN(r) && !double.IsInfinity(r)).ToList();
-        case "Squared error": return originalValues.Zip(estimatedValues, (x, y) => (x - y) * (x - y))
+        case "Squared error":
+          return originalValues.Zip(estimatedValues, (x, y) => (x - y) * (x - y))
             .Where(r => !double.IsNaN(r) && !double.IsInfinity(r)).ToList();
         case "Relative error":
           return originalValues.Zip(estimatedValues, (x, y) => x.IsAlmost(0.0) ? -1 : Math.Abs((x - y) / x))
@@ -288,11 +285,16 @@ namespace HeuristicLab.Problems.DataAnalysis.Views {
     }
 
     protected virtual IEnumerable<IRegressionSolution> CreateBaselineSolutions() {
-      yield return CreateConstantSolution();
-      yield return CreateLinearSolution();
+      var constantSolution = CreateConstantSolution();
+      if (constantSolution != null) yield return CreateConstantSolution();
+
+      var linearRegressionSolution = CreateLinearSolution();
+      if (linearRegressionSolution != null) yield return CreateLinearSolution();
     }
 
     private IRegressionSolution CreateConstantSolution() {
+      if (!ProblemData.TrainingIndices.Any()) return null;
+
       double averageTrainingTarget = ProblemData.Dataset.GetDoubleValues(ProblemData.TargetVariable, ProblemData.TrainingIndices).Average();
       var model = new ConstantModel(averageTrainingTarget, ProblemData.TargetVariable);
       var solution = model.CreateRegressionSolution(ProblemData);
@@ -300,10 +302,16 @@ namespace HeuristicLab.Problems.DataAnalysis.Views {
       return solution;
     }
     private IRegressionSolution CreateLinearSolution() {
-      double rmsError, cvRmsError;
-      var solution = LinearRegression.CreateLinearRegressionSolution((IRegressionProblemData)ProblemData.Clone(), out rmsError, out cvRmsError);
-      solution.Name = "Baseline (linear)";
-      return solution;
+      try {
+        var solution = LinearRegression.CreateSolution((IRegressionProblemData)ProblemData.Clone(), out _, out _, out _);
+        solution.Name = "Baseline (linear)";
+        return solution;
+      } catch (NotSupportedException e) {
+        ErrorHandling.ShowErrorDialog("Could not create a linear regression solution.", e);
+      } catch (ArgumentException e) {
+        ErrorHandling.ShowErrorDialog("Could not create a linear regression solution.", e);
+      }
+      return null;
     }
 
     private void chart_MouseMove(object sender, MouseEventArgs e) {
