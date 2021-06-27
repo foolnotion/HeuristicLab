@@ -25,7 +25,6 @@ using System.Collections.Generic;
 using System.Linq;
 using HeuristicLab.Algorithms.DataAnalysis;
 using HeuristicLab.MainForm;
-using HeuristicLab.PluginInfrastructure;
 using HeuristicLab.Problems.DataAnalysis.Views;
 
 namespace HeuristicLab.Problems.DataAnalysis.Symbolic.Regression.Views {
@@ -43,6 +42,7 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.Regression.Views {
 
     private IRegressionSolution CreateLinearRegressionSolution() {
       if (Content == null) throw new InvalidOperationException();
+      double rmse, cvRmsError;
       var problemData = (IRegressionProblemData)ProblemData.Clone();
       if (!problemData.TrainingIndices.Any()) return null; // don't create an LR model if the problem does not have a training set (e.g. loaded into an existing model)
 
@@ -86,16 +86,9 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.Regression.Views {
       newProblemData.TestPartition.Start = problemData.TestPartition.Start;
       newProblemData.TestPartition.End = problemData.TestPartition.End;
 
-      try {
-        var solution = LinearRegression.CreateSolution(newProblemData, out _, out _, out _);
-        solution.Name = "Baseline (linear subset)";
-        return solution;
-      } catch (NotSupportedException e) {
-        ErrorHandling.ShowErrorDialog("Could not create a linear regression solution.", e);
-      } catch (ArgumentException e) {
-        ErrorHandling.ShowErrorDialog("Could not create a linear regression solution.", e);
-      }
-      return null;
+      var solution = LinearRegression.CreateLinearRegressionSolution(newProblemData, out rmse, out cvRmsError);
+      solution.Name = "Baseline (linear subset)";
+      return solution;
     }
 
 
@@ -105,8 +98,7 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.Regression.Views {
       // does not support lagged variables
       if (Content.Model.SymbolicExpressionTree.IterateNodesPrefix().OfType<LaggedVariableTreeNode>().Any()) yield break;
 
-      var linearRegressionSolution = CreateLinearRegressionSolution();
-      if (linearRegressionSolution != null) yield return linearRegressionSolution;
+      yield return CreateLinearRegressionSolution();
     }
   }
 }
