@@ -32,7 +32,7 @@
     // 
     // Wrapped for access from C# by Gabriel Kronberger
 
-    public enum LinearSolverType : int {
+    public enum LinearSolver : int {
       // These solvers are for general rectangular systems formed from the
       // normal equations A'A x = A'b. They are direct solvers and do not
       // assume any special problem structure.
@@ -69,7 +69,7 @@
       CGNR
     };
 
-    public enum PreconditionerType {
+    public enum Preconditioner {
       // Trivial preconditioner - the identity matrix.
       IDENTITY,
 
@@ -115,12 +115,12 @@
       SUBSET,
     };
 
-    public enum MinimizerType : int {
+    public enum Minimizer : int {
       LINE_SEARCH,
       TRUST_REGION,
     };
 
-    public enum LineSearchDirectionType : int {
+    public enum LineSearchDirection : int {
       // Negative of the gradient.
       STEEPEST_DESCENT,
 
@@ -200,7 +200,7 @@
       HESTENES_STIEFEL,
     };
 
-    public enum LineSearchType {
+    public enum LineSearch {
       // Backtracking line search with polynomial interpolation or
       // bisection.
       ARMIJO,
@@ -209,7 +209,7 @@
 
     // Ceres supports different strategies for computing the trust region
     // step.
-    public enum TrustRegionStrategyType : int {
+    public enum TrustRegionStrategy : int {
       // The default trust region strategy is to use the step computation
       // used in the Levenberg-Marquardt algorithm. For more details see
       // levenberg_marquardt_strategy.h
@@ -239,7 +239,7 @@
     // "Approximate solution of the trust region problem by minimization
     //  over two-dimensional subspaces", Mathematical Programming,
     // 40 (1988), pp. 247--263
-    public enum DoglegType {
+    public enum DogLeg {
       // The traditional approach constructs a dogleg path
       // consisting of two line segments and finds the furthest
       // point on that path that is still inside the trust region.

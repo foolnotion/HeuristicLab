@@ -37,7 +37,7 @@ using HeuristicLab.Problems.DataAnalysis;
 namespace HeuristicLab.Problems.DataAnalysis.Symbolic {
   [StorableType("91723319-8F15-4D33-B277-40AC7C7CF9AE")]
   [Item("NativeInterpreter", "Operator calling into native C++ code for tree interpretation.")]
-  public class NativeInterpreter : ParameterizedNamedItem, ISymbolicDataAnalysisExpressionTreeInterpreter {
+  public sealed class NativeInterpreter : ParameterizedNamedItem, ISymbolicDataAnalysisExpressionTreeInterpreter {
     private const string EvaluatedSolutionsParameterName = "EvaluatedSolutions";
 
     #region parameters
@@ -57,40 +57,77 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic {
       Parameters.Add(new FixedValueParameter<IntValue>(EvaluatedSolutionsParameterName, "A counter for the total number of solutions the interpreter has evaluated", new IntValue(0)));
     }
 
+    #region storable ctor and cloning
     [StorableConstructor]
-    protected NativeInterpreter(StorableConstructorFlag _) : base(_) { }
-
-    protected NativeInterpreter(NativeInterpreter original, Cloner cloner) : base(original, cloner) {
-    }
-
+    private NativeInterpreter(StorableConstructorFlag _) : base(_) { }
     public override IDeepCloneable Clone(Cloner cloner) {
       return new NativeInterpreter(this, cloner);
     }
+
+    private NativeInterpreter(NativeInterpreter original, Cloner cloner) : base(original, cloner) { }
+    #endregion
+
     public static NativeInstruction[] Compile(ISymbolicExpressionTree tree, IDataset dataset, Func<ISymbolicExpressionTreeNode, byte> opCodeMapper, out List<ISymbolicExpressionTreeNode> nodes) {
       var root = tree.Root.GetSubtree(0).GetSubtree(0);
       return Compile(root, dataset, opCodeMapper, out nodes);
     }
 
     public static NativeInstruction[] Compile(ISymbolicExpressionTreeNode root, IDataset dataset, Func<ISymbolicExpressionTreeNode, byte> opCodeMapper, out List<ISymbolicExpressionTreeNode> nodes) {
-      if (cachedData == null || cachedDataset != dataset) {
+      if (cachedData == null || cachedDataset != dataset || cachedDataset is ModifiableDataset) {
         InitCache(dataset);
       }
-
+      
       nodes = root.IterateNodesPrefix().ToList(); nodes.Reverse();
       var code = new NativeInstruction[nodes.Count];
-
-      for (int i = 0; i < nodes.Count; ++i) {
-        var node = nodes[i];
-        code[i] = new NativeInstruction { Arity = (ushort)node.SubtreeCount, OpCode = opCodeMapper(node), Length = (ushort)node.GetLength(), Optimize = true };
-
-        if (node is VariableTreeNode variable) {
+      if (root.SubtreeCount > ushort.MaxValue) throw new ArgumentException("Number of subtrees is too big (>65.535)");
+      int i = code.Length - 1;
+      foreach (var n in root.IterateNodesPrefix()) {
+        code[i] = new NativeInstruction { Arity = (ushort)n.SubtreeCount, OpCode = opCodeMapper(n), Length = 1, Optimize = false };
+        if (n is VariableTreeNode variable) {
           code[i].Value = variable.Weight;
           code[i].Data = cachedData[variable.VariableName].AddrOfPinnedObject();
-        } else if (node is ConstantTreeNode constant) {
+        } else if (n is ConstantTreeNode constant) {
           code[i].Value = constant.Value;
         }
+        --i;
       }
+      // second pass to calculate lengths
+      for (i = 0; i < code.Length; i++) {
+        var c = i - 1;
+        for (int j = 0; j < code[i].Arity; ++j) {
+          code[i].Length += code[c].Length;
+          c -= code[c].Length;
+        }
+      }
+
       return code;
+    }
+
+    public IEnumerable<double> GetSymbolicExpressionTreeValues(ISymbolicExpressionTree tree, IDataset dataset, IEnumerable<int> rows) {
+      return GetSymbolicExpressionTreeValues(tree, dataset, rows.ToArray());
+    }
+
+    public IEnumerable<double> GetSymbolicExpressionTreeValues(ISymbolicExpressionTree tree, IDataset dataset, int[] rows) {
+      if (!rows.Any()) return Enumerable.Empty<double>();
+
+      byte mapSupportedSymbols(ISymbolicExpressionTreeNode node) {
+        var opCode = OpCodes.MapSymbolToOpCode(node);
+        if (supportedOpCodes.Contains(opCode)) return opCode;
+        else throw new NotSupportedException($"The native interpreter does not support {node.Symbol.Name}");
+      };
+      var code = Compile(tree, dataset, mapSupportedSymbols, out List<ISymbolicExpressionTreeNode> nodes);
+
+      var result = new double[rows.Length];
+      var options = new SolverOptions { Iterations = 0 }; // Evaluate only. Do not optimize.
+
+      NativeWrapper.GetValues(code, rows, options, result, target: null, out var summary);
+
+      // when evaluation took place without any error, we can increment the counter
+      lock (syncRoot) {
+        EvaluatedSolutions++;
+      }
+
+      return result;
     }
 
     private readonly object syncRoot = new object();
@@ -101,7 +138,7 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic {
     [ThreadStatic]
     private static IDataset cachedDataset;
 
-    protected static readonly HashSet<byte> supportedOpCodes = new HashSet<byte>() {
+    private static readonly HashSet<byte> supportedOpCodes = new HashSet<byte>() {
       (byte)OpCode.Constant,
       (byte)OpCode.Variable,
       (byte)OpCode.Add,
@@ -114,8 +151,8 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic {
       (byte)OpCode.Cos,
       (byte)OpCode.Tan,
       (byte)OpCode.Tanh,
-      (byte)OpCode.Power,
-      (byte)OpCode.Root,
+      // (byte)OpCode.Power, // these symbols are handled differently in the NativeInterpreter than in HL
+      // (byte)OpCode.Root,
       (byte)OpCode.SquareRoot,
       (byte)OpCode.Square,
       (byte)OpCode.CubeRoot,
@@ -124,10 +161,6 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic {
       (byte)OpCode.AnalyticQuotient
     };
 
-    public IEnumerable<double> GetSymbolicExpressionTreeValues(ISymbolicExpressionTree tree, IDataset dataset, IEnumerable<int> rows) {
-      return GetSymbolicExpressionTreeValues(tree, dataset, rows.ToArray());
-    }
-    
     private static void InitCache(IDataset dataset) {
       cachedDataset = dataset;
       // cache new data (but free old data first)
@@ -157,30 +190,6 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic {
 
     public void InitializeState() {
       ClearState();
-    }
-
-    public IEnumerable<double> GetSymbolicExpressionTreeValues(ISymbolicExpressionTree tree, IDataset dataset, int[] rows) {
-      if (!rows.Any()) return Enumerable.Empty<double>();
-
-      byte mapSupportedSymbols(ISymbolicExpressionTreeNode node) {
-        var opCode = OpCodes.MapSymbolToOpCode(node);
-        if (supportedOpCodes.Contains(opCode)) return opCode;
-        else throw new NotSupportedException($"The native interpreter does not support {node.Symbol.Name}");
-      };
-      var code = Compile(tree, dataset, mapSupportedSymbols, out List<ISymbolicExpressionTreeNode> nodes);
-
-      var result = new double[rows.Length];
-      var options = new SolverOptions { /* not using any options here */ };
-
-      var summary = new OptimizationSummary(); // also not used
-      NativeWrapper.GetValues(code, rows, options, result, target: null, out summary);
-
-      // when evaluation took place without any error, we can increment the counter
-      lock (syncRoot) {
-        EvaluatedSolutions++;
-      }
-
-      return result;
     }
   }
 }

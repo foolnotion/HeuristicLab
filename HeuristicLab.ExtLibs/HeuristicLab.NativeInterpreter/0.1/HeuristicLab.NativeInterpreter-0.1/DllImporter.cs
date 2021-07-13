@@ -23,11 +23,11 @@ namespace HeuristicLab.NativeInterpreter {
   public class SolverOptions {
     public int Iterations = 10;
     public int UseNonmonotonicSteps = 0; // = false
-    public CeresTypes.MinimizerType Minimizer = CeresTypes.MinimizerType.TRUST_REGION;
-    public CeresTypes.LinearSolverType LinearSolver = CeresTypes.LinearSolverType.DENSE_QR;
-    public CeresTypes.TrustRegionStrategyType TrustRegionStrategy = CeresTypes.TrustRegionStrategyType.LEVENBERG_MARQUARDT;
-    public CeresTypes.DoglegType Dogleg = CeresTypes.DoglegType.TRADITIONAL_DOGLEG;
-    public CeresTypes.LineSearchDirectionType LineSearchDirection = CeresTypes.LineSearchDirectionType.LBFGS;
+    public CeresTypes.Minimizer Minimizer = CeresTypes.Minimizer.TRUST_REGION;
+    public CeresTypes.LinearSolver LinearSolver = CeresTypes.LinearSolver.DENSE_QR;
+    public CeresTypes.TrustRegionStrategy TrustRegionStrategy = CeresTypes.TrustRegionStrategy.LEVENBERG_MARQUARDT;
+    public CeresTypes.DogLeg DogLeg = CeresTypes.DogLeg.TRADITIONAL_DOGLEG;
+    public CeresTypes.LineSearchDirection LineSearchDirection = CeresTypes.LineSearchDirection.LBFGS;
     public Algorithm Algorithm = Algorithm.Krogh;
   }
 
