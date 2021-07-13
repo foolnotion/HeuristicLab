@@ -27,7 +27,7 @@ namespace HeuristicLab.Problems.Instances.DataAnalysis {
 
     public override string Name {
       get {
-        return string.Format("I.11.19 x1*y1+x2*y2+x3*y3 | {0} samples | {1}", trainingSamples,
+        return string.Format("I.11.19 x1*y1+x2*y2+x3*y3 | {0}",
           noiseRatio == null ? "no noise" : string.Format(System.Globalization.CultureInfo.InvariantCulture, "noise={0:g}",noiseRatio));
       }
     }
@@ -35,7 +35,7 @@ namespace HeuristicLab.Problems.Instances.DataAnalysis {
     protected override string TargetVariable { get { return noiseRatio == null ? "A" : "A_noise"; } }
 
     protected override string[] VariableNames {
-      get { return new[] {"x1", "x2", "x3", "y1", "y2", "y3", noiseRatio == null ? "A" : "A_noise"}; }
+      get { return noiseRatio == null ? new[] { "x1", "x2", "x3", "y1", "y2", "y3", "A" } : new[] { "x1", "x2", "x3", "y1", "y2", "y3", "A", "A_noise" }; }
     }
 
     protected override string[] AllowedInputVariables { get { return new[] {"x1", "x2", "x3", "y1", "y2", "y3"}; } }
@@ -73,13 +73,8 @@ namespace HeuristicLab.Problems.Instances.DataAnalysis {
         A.Add(res);
       }
 
-      if (noiseRatio != null) {
-        var A_noise     = new List<double>();
-        var sigma_noise = (double) noiseRatio * A.StandardDeviationPop();
-        A_noise.AddRange(A.Select(md => md + NormalDistributedRandom.NextDouble(rand, 0, sigma_noise)));
-        data.Remove(A);
-        data.Add(A_noise);
-      }
+      var targetNoise = GetNoisyTarget(A, rand);
+      if (targetNoise != null) data.Add(targetNoise);
 
       return data;
     }

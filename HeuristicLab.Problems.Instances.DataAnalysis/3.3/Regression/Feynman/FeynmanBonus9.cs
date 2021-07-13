@@ -28,15 +28,15 @@ namespace HeuristicLab.Problems.Instances.DataAnalysis {
     public override string Name {
       get {
         return string.Format(
-          "Goldstein 3.64: d*(1-alpha**2)/(1+alpha*cos(theta1-theta2)) | {0} samples | {1}",
-          trainingSamples, noiseRatio == null ? "no noise" : string.Format(System.Globalization.CultureInfo.InvariantCulture, "noise={0:g}",noiseRatio));
+          "Goldstein 3.64: d*(1-alpha**2)/(1+alpha*cos(theta1-theta2)) | {0}",
+          noiseRatio == null ? "no noise" : string.Format(System.Globalization.CultureInfo.InvariantCulture, "noise={0:g}",noiseRatio));
       }
     }
 
     protected override string TargetVariable { get { return noiseRatio == null ? "r" : "r_noise"; } }
 
     protected override string[] VariableNames {
-      get { return new[] {"d", "alpha", "theta1", "theta2", noiseRatio == null ? "r" : "r_noise"}; }
+      get { return noiseRatio == null ? new[] { "d", "alpha", "theta1", "theta2", "r" } : new[] { "d", "alpha", "theta1", "theta2", "r", "r_noise" }; }
     }
 
     protected override string[] AllowedInputVariables { get { return new[] {"d", "alpha", "theta1", "theta2"}; } }
@@ -70,13 +70,8 @@ namespace HeuristicLab.Problems.Instances.DataAnalysis {
         r.Add(res);
       }
 
-      if (noiseRatio != null) {
-        var r_noise     = new List<double>();
-        var sigma_noise = (double) noiseRatio * r.StandardDeviationPop();
-        r_noise.AddRange(r.Select(md => md + NormalDistributedRandom.NextDouble(rand, 0, sigma_noise)));
-        data.Remove(r);
-        data.Add(r_noise);
-      }
+      var targetNoise = GetNoisyTarget(r, rand);
+      if (targetNoise != null) data.Add(targetNoise);
 
       return data;
     }

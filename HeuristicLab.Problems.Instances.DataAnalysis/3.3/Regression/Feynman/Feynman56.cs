@@ -27,15 +27,15 @@ namespace HeuristicLab.Problems.Instances.DataAnalysis {
 
     public override string Name {
       get {
-        return string.Format("II.6.15a 3/(4*pi*epsilon)*p_d*z/r**5*sqrt(x**2+y**2) | {0} samples | {1}",
-          trainingSamples, noiseRatio == null ? "no noise" : string.Format(System.Globalization.CultureInfo.InvariantCulture, "noise={0:g}",noiseRatio));
+        return string.Format("II.6.15a 3/(4*pi*epsilon)*p_d*z/r**5*sqrt(x**2+y**2) | {0}",
+          noiseRatio == null ? "no noise" : string.Format(System.Globalization.CultureInfo.InvariantCulture, "noise={0:g}",noiseRatio));
       }
     }
 
     protected override string TargetVariable { get { return noiseRatio == null ? "Ef" : "Ef_noise"; } }
 
     protected override string[] VariableNames {
-      get { return new[] {"epsilon", "p_d", "r", "x", "y", "z", noiseRatio == null ? "Ef" : "Ef_noise"}; }
+      get { return noiseRatio == null ? new[] { "epsilon", "p_d", "r", "x", "y", "z", "Ef" } : new[] { "epsilon", "p_d", "r", "x", "y", "z", "Ef", "Ef_noise" }; }
     }
 
     protected override string[] AllowedInputVariables { get { return new[] {"epsilon", "p_d", "r", "x", "y", "z"}; } }
@@ -74,13 +74,8 @@ namespace HeuristicLab.Problems.Instances.DataAnalysis {
         Ef.Add(res);
       }
 
-      if (noiseRatio != null) {
-        var Ef_noise    = new List<double>();
-        var sigma_noise = (double) noiseRatio * Ef.StandardDeviationPop();
-        Ef_noise.AddRange(Ef.Select(md => md + NormalDistributedRandom.NextDouble(rand, 0, sigma_noise)));
-        data.Remove(Ef);
-        data.Add(Ef_noise);
-      }
+      var targetNoise = GetNoisyTarget(Ef, rand);
+      if (targetNoise != null) data.Add(targetNoise);
 
       return data;
     }

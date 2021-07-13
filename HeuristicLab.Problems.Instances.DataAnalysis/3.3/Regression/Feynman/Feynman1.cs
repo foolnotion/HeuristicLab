@@ -27,13 +27,17 @@ namespace HeuristicLab.Problems.Instances.DataAnalysis {
 
     public override string Name {
       get {
-        return string.Format("I.6.20a exp(-theta**2/2)/sqrt(2*pi) | {0} samples | {1}", trainingSamples,
+        return string.Format("I.6.20a exp(-theta**2/2)/sqrt(2*pi) | {0}",
           noiseRatio == null ? "no noise" : string.Format(System.Globalization.CultureInfo.InvariantCulture, "noise={0:g}",noiseRatio));
       }
     }
 
     protected override string TargetVariable { get { return noiseRatio == null ? "f" : "f_noise"; } }
-    protected override string[] VariableNames { get { return new[] {"theta", noiseRatio == null ? "f" : "f_noise"}; } }
+
+    protected override string[] VariableNames {
+      get { return noiseRatio == null ? new[] {"theta", "f"} : new[] { "theta", "f", "f_noise" }; }
+    }
+
     protected override string[] AllowedInputVariables { get { return new[] {"theta"}; } }
 
     public int Seed { get; private set; }
@@ -59,13 +63,15 @@ namespace HeuristicLab.Problems.Instances.DataAnalysis {
         f.Add(res);
       }
 
-      if (noiseRatio != null) {
+      /*if (noiseRatio != null) {
         var f_noise     = new List<double>();
-        var sigma_noise = (double) noiseRatio * f.StandardDeviationPop();
-        f_noise.AddRange(f.Select(md => md + NormalDistributedRandom.NextDouble(rand, 0, sigma_noise)));
+        var sigma_noise = (double) Math.Sqrt(noiseRatio.Value) * f.StandardDeviationPop();
+        f_noise.AddRange(f.Select(md => md + NormalDistributedRandomPolar.NextDouble(rand, 0, sigma_noise)));
         data.Remove(f);
         data.Add(f_noise);
-      }
+      }*/
+      var targetNoise = GetNoisyTarget(f, rand);
+      if (targetNoise != null) data.Add(targetNoise);
 
       return data;
     }

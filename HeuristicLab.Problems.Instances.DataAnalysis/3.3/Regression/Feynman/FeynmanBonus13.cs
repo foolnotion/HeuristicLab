@@ -28,15 +28,15 @@ namespace HeuristicLab.Problems.Instances.DataAnalysis {
     public override string Name {
       get {
         return string.Format(
-          "Goldstein 12.80: 1/(2*m)*(p**2+m**2*omega**2*x**2*(1+alpha*x/y)) | {0} samples | {1}",
-          trainingSamples, noiseRatio == null ? "no noise" : string.Format(System.Globalization.CultureInfo.InvariantCulture, "noise={0:g}",noiseRatio));
+          "Goldstein 12.80: 1/(2*m)*(p**2+m**2*omega**2*x**2*(1+alpha*x/y)) | {0}",
+          noiseRatio == null ? "no noise" : string.Format(System.Globalization.CultureInfo.InvariantCulture, "noise={0:g}",noiseRatio));
       }
     }
 
     protected override string TargetVariable { get { return noiseRatio == null ? "E_n" : "E_n_noise"; } }
 
     protected override string[] VariableNames {
-      get { return new[] {"m", "omega", "p", "y", "x", "alpha", noiseRatio == null ? "E_n" : "E_n_noise"}; }
+      get { return noiseRatio == null ? new[] { "m", "omega", "p", "y", "x", "alpha", "E_n" } : new[] { "m", "omega", "p", "y", "x", "alpha", "E_n", "E_n_noise" }; }
     }
 
     protected override string[] AllowedInputVariables { get { return new[] {"m", "omega", "p", "y", "x", "alpha"}; } }
@@ -76,13 +76,8 @@ namespace HeuristicLab.Problems.Instances.DataAnalysis {
         E_n.Add(res);
       }
 
-      if (noiseRatio != null) {
-        var E_n_noise   = new List<double>();
-        var sigma_noise = (double) noiseRatio * E_n.StandardDeviationPop();
-        E_n_noise.AddRange(E_n.Select(md => md + NormalDistributedRandom.NextDouble(rand, 0, sigma_noise)));
-        data.Remove(E_n);
-        data.Add(E_n_noise);
-      }
+      var targetNoise = GetNoisyTarget(E_n, rand);
+      if (targetNoise != null) data.Add(targetNoise);
 
       return data;
     }

@@ -34,7 +34,6 @@ namespace HeuristicLab.Problems.DataAnalysis {
   public class RegressionProblemData : DataAnalysisProblemData, IRegressionProblemData, IStorableContent {
     protected const string TargetVariableParameterName = "TargetVariable";
     protected const string VariableRangesParameterName = "VariableRanges";
-    protected const string IntervalConstraintsParameterName = "IntervalConstraints";
     public string Filename { get; set; }
 
     #region default data
@@ -77,7 +76,7 @@ namespace HeuristicLab.Problems.DataAnalysis {
     static RegressionProblemData() {
       defaultDataset = new Dataset(new string[] { "y", "x" }, kozaF1);
       defaultDataset.Name = "Fourth-order Polynomial Function Benchmark Dataset";
-      defaultDataset.Description = "f(x) = x^4 + x^3 + x^2 + x^1";
+      defaultDataset.Description = "f(x) = x^4 + x^3 + x^2 + x";
       defaultAllowedInputVariables = new List<string>() { "x" };
       defaultTargetVariable = "y";
 
@@ -97,16 +96,15 @@ namespace HeuristicLab.Problems.DataAnalysis {
     }
     #endregion
 
-    public IConstrainedValueParameter<StringValue> TargetVariableParameter {
-      get { return (IConstrainedValueParameter<StringValue>)Parameters[TargetVariableParameterName]; }
-    }
-
+    #region parameter properties
+    public IConstrainedValueParameter<StringValue> TargetVariableParameter => (IConstrainedValueParameter<StringValue>)Parameters[TargetVariableParameterName];
     public IFixedValueParameter<IntervalCollection> VariableRangesParameter => (IFixedValueParameter<IntervalCollection>)Parameters[VariableRangesParameterName];
+    #endregion
 
+    #region properties
     public IntervalCollection VariableRanges {
       get => VariableRangesParameter.Value;
     }
-
 
     public string TargetVariable {
       get { return TargetVariableParameter.Value.Value; }
@@ -119,16 +117,11 @@ namespace HeuristicLab.Problems.DataAnalysis {
         TargetVariableParameter.Value = matchingParameterValue;
       }
     }
+    public IEnumerable<double> TargetVariableValues => Dataset.GetDoubleValues(TargetVariable);
+    public IEnumerable<double> TargetVariableTrainingValues => Dataset.GetDoubleValues(TargetVariable, TrainingIndices);
+    public IEnumerable<double> TargetVariableTestValues => Dataset.GetDoubleValues(TargetVariable, TestIndices);
+    #endregion
 
-    public IEnumerable<double> TargetVariableValues {
-      get { return Dataset.GetDoubleValues(TargetVariable); }
-    }
-    public IEnumerable<double> TargetVariableTrainingValues {
-      get { return Dataset.GetDoubleValues(TargetVariable, TrainingIndices); }
-    }
-    public IEnumerable<double> TargetVariableTestValues {
-      get { return Dataset.GetDoubleValues(TargetVariable, TestIndices); }
-    }
 
 
     [StorableConstructor]
@@ -136,9 +129,10 @@ namespace HeuristicLab.Problems.DataAnalysis {
     [StorableHook(HookType.AfterDeserialization)]
     private void AfterDeserialization() {
       if (!Parameters.ContainsKey(VariableRangesParameterName)) {
-        var intervalCollection = CalculateDatasetIntervals(this.Dataset);
-        Parameters.Add(new FixedValueParameter<IntervalCollection>(VariableRangesParameterName, intervalCollection));
+        var variableRanges = Dataset.GetVariableRanges();
+        Parameters.Add(new FixedValueParameter<IntervalCollection>(VariableRangesParameterName, variableRanges));
       }
+
       RegisterParameterEvents();
     }
 
@@ -162,29 +156,22 @@ namespace HeuristicLab.Problems.DataAnalysis {
       TestPartition.End = regressionProblemData.TestPartition.End;
     }
 
-    public RegressionProblemData(IDataset dataset, IEnumerable<string> allowedInputVariables, string targetVariable, IEnumerable<ITransformation> transformations = null)
+    public RegressionProblemData(IDataset dataset, IEnumerable<string> allowedInputVariables, string targetVariable,
+      IEnumerable<ITransformation> transformations = null,
+      IntervalCollection variableRanges = null)
       : base(dataset, allowedInputVariables, transformations ?? Enumerable.Empty<ITransformation>()) {
       var variables = InputVariables.Select(x => x.AsReadOnly()).ToList();
       Parameters.Add(new ConstrainedValueParameter<StringValue>(TargetVariableParameterName, new ItemSet<StringValue>(variables), variables.Where(x => x.Value == targetVariable).First()));
-      var intervalCollection = CalculateDatasetIntervals(this.Dataset);
-      Parameters.Add(new FixedValueParameter<IntervalCollection>(VariableRangesParameterName, intervalCollection));
-      RegisterParameterEvents();
-    }
-
-    private static IntervalCollection CalculateDatasetIntervals(IDataset dataset) {
-      IntervalCollection intervalCollection = new IntervalCollection();
-      foreach (var variable in dataset.DoubleVariables) {// intervals are only possible for double variables
-        var variableInterval = Interval.GetInterval(dataset.GetDoubleValues(variable));
-        intervalCollection.AddInterval(variable, variableInterval);
+      if (variableRanges == null) {
+        variableRanges = Dataset.GetVariableRanges();
       }
-
-      return intervalCollection;
+      Parameters.Add(new FixedValueParameter<IntervalCollection>(VariableRangesParameterName, variableRanges));
     }
-
     private void RegisterParameterEvents() {
-      TargetVariableParameter.ValueChanged += new EventHandler(TargetVariableParameter_ValueChanged);
+      TargetVariableParameter.ValueChanged += new EventHandler(Parameter_ValueChanged);
+      // VariableRanges are fixed parameters
     }
-    private void TargetVariableParameter_ValueChanged(object sender, EventArgs e) {
+    private void Parameter_ValueChanged(object sender, EventArgs e) {
       OnChanged();
     }
   }

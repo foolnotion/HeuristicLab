@@ -27,15 +27,15 @@ namespace HeuristicLab.Problems.Instances.DataAnalysis {
 
     public override string Name {
       get {
-        return string.Format("I.32.5 q**2*a**2/(6*pi*epsilon*c**3) | {0} samples | {1}",
-          trainingSamples, noiseRatio == null ? "no noise" : string.Format(System.Globalization.CultureInfo.InvariantCulture, "noise={0:g}",noiseRatio));
+        return string.Format("I.32.5 q**2*a**2/(6*pi*epsilon*c**3) | {0}",
+          noiseRatio == null ? "no noise" : string.Format(System.Globalization.CultureInfo.InvariantCulture, "noise={0:g}",noiseRatio));
       }
     }
 
     protected override string TargetVariable { get { return noiseRatio == null ? "Pwr" : "Pwr_noise"; } }
 
     protected override string[] VariableNames {
-      get { return new[] {"q", "a", "epsilon", "c", noiseRatio == null ? "Pwr" : "Pwr_noise"}; }
+      get { return noiseRatio == null ? new[] { "q", "a", "epsilon", "c", "Pwr" } : new[] { "q", "a", "epsilon", "c", "Pwr", "Pwr_noise" }; }
     }
 
     protected override string[] AllowedInputVariables { get { return new[] {"q", "a", "epsilon", "c"}; } }
@@ -69,13 +69,8 @@ namespace HeuristicLab.Problems.Instances.DataAnalysis {
         Pwr.Add(res);
       }
 
-      if (noiseRatio != null) {
-        var Pwr_noise   = new List<double>();
-        var sigma_noise = (double) noiseRatio * Pwr.StandardDeviationPop();
-        Pwr_noise.AddRange(Pwr.Select(md => md + NormalDistributedRandom.NextDouble(rand, 0, sigma_noise)));
-        data.Remove(Pwr);
-        data.Add(Pwr_noise);
-      }
+      var targetNoise = GetNoisyTarget(Pwr, rand);
+      if (targetNoise != null) data.Add(targetNoise);
 
       return data;
     }
