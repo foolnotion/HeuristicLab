@@ -220,7 +220,7 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.Regression {
         if (node is VariableTreeNode && !updateVariableWeights) {
           continue;
         }
-        if (node is ConstantTreeNode && node.Parent.Symbol is Power && node.Parent.GetSubtree(0) == node) {
+        if (node is ConstantTreeNode && node.Parent.Symbol is Power && node.Parent.GetSubtree(1) == node) {
           // do not optimize exponents
           continue;
         }
