@@ -135,6 +135,7 @@
     <Compile Include="ShapeConstraintsAnalyzer.cs" />
     <Compile Include="SingleObjective\ConstantOptimizationAnalyzer.cs" />
     <Compile Include="SingleObjective\Evaluators\NMSESingleObjectiveConstraintsEvaluator.cs" />
+    <Compile Include="SingleObjective\Evaluators\ParameterOptimizationEvaluator.cs" />
     <Compile Include="SingleObjective\Evaluators\SymbolicRegressionMeanRelativeErrorEvaluator.cs" />
     <Compile Include="SingleObjective\ShapeConstrainedRegressionSingleObjectiveProblem.cs" />
     <Compile Include="SingleObjective\SymbolicRegressionSolutionsAnalyzer.cs" />
