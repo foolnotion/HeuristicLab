@@ -24,6 +24,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using HeuristicLab.Encodings.SymbolicExpressionTreeEncoding;
+using HeuristicLab.NativeInterpreter;
 using HeuristicLab.Random;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace HeuristicLab.Problems.DataAnalysis.Symbolic.Tests {
@@ -164,10 +165,10 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.Tests {
       var tree = parser.Parse(expr);
       var rows = Enumerable.Range(0, nRows).ToArray();
       var options = new SolverOptions { 
-        Minimizer = (int)MinimizerType.TRUST_REGION,
+        Minimizer = CeresTypes.Minimizer.TRUST_REGION,
         Iterations = 20,
-        TrustRegionStrategy = (int)TrustRegionStrategyType.LEVENBERG_MARQUARDT,
-        LinearSolver = (int)LinearSolverType.DENSE_QR
+        TrustRegionStrategy = CeresTypes.TrustRegionStrategy.LEVENBERG_MARQUARDT,
+        LinearSolver = CeresTypes.LinearSolver.DENSE_QR
       };
 
       var nodesToOptimize = new HashSet<ISymbolicExpressionTreeNode>(tree.IterateNodesPrefix().Where(x => x is VariableTreeNode));
@@ -221,10 +222,10 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.Tests {
       var trees = expr.Select(x => parser.Parse(x)).ToArray();
       var rows = Enumerable.Range(0, nRows).ToArray();
       var options = new SolverOptions {
-        Minimizer = (int)MinimizerType.TRUST_REGION,
+        Minimizer = CeresTypes.Minimizer.TRUST_REGION,
         Iterations = 100,
-        TrustRegionStrategy = (int)TrustRegionStrategyType.LEVENBERG_MARQUARDT,
-        LinearSolver = (int)LinearSolverType.DENSE_QR
+        TrustRegionStrategy = CeresTypes.TrustRegionStrategy.LEVENBERG_MARQUARDT,
+        LinearSolver = CeresTypes.LinearSolver.DENSE_QR
       };
 
       var summary = new OptimizationSummary();
